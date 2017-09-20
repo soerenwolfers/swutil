@@ -10,10 +10,13 @@ import warnings
 from numpy import inf
 import matplotlib2tikz
 from matplotlib.pyplot import savefig
+from swutil.aux import Empty
 
-def save(name):
-    matplotlib2tikz.save(name+'.tex')
-    savefig(name+'.pdf', bbox_inches='tight')
+def save(name,tex=True,pdf=True):
+    if tex:
+        matplotlib2tikz.save(name+'.tex')
+    if pdf:
+        savefig(name+'.pdf', bbox_inches='tight')
 
 def plot_indices(mis, dims, weight_dict=None, N_q=1):
     '''
@@ -105,35 +108,35 @@ def plot3D(X, Y, Z):
     :param Y: 2D-Array of y-coordinates
     :param Z: 2D-Array of z-coordinates
     '''
-    from mpl_toolkits.mplot3d import Axes3D
+    from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport
     fig = plt.figure()
     ax = Axes3D(fig)
     light = LightSource(90, 90)
-    illuminated_surface = light.shade(Z, cmap=cm.coolwarm)
+    illuminated_surface = light.shade(Z, cmap=cm.coolwarm)  # @UndefinedVariable
     Xmin = np.amin(X)
     Xmax = np.amax(X)
     Ymin = np.amin(Y)
     Ymax = np.amax(Y)
     Zmin = np.amin(Z)
     Zmax = np.amax(Z)
-    ax.contourf(X, Y, Z, zdir='x', offset=Xmin - 0.1 * (Xmax - Xmin), cmap=cm.coolwarm, alpha=1)
-    ax.contourf(X, Y, Z, zdir='y', offset=Ymax + 0.1 * (Ymax - Ymin), cmap=cm.coolwarm, alpha=1)
-    ax.contourf(X, Y, Z, zdir='z', offset=Zmin - 0.1 * (Zmax - Zmin), cmap=cm.coolwarm, alpha=1)
+    ax.contourf(X, Y, Z, zdir='x', offset=Xmin - 0.1 * (Xmax - Xmin), cmap=cm.coolwarm, alpha=1)  # @UndefinedVariable
+    ax.contourf(X, Y, Z, zdir='y', offset=Ymax + 0.1 * (Ymax - Ymin), cmap=cm.coolwarm, alpha=1)  # @UndefinedVariable
+    ax.contourf(X, Y, Z, zdir='z', offset=Zmin - 0.1 * (Zmax - Zmin), cmap=cm.coolwarm, alpha=1)  # @UndefinedVariable
     ax.plot_surface(X, Y, Z, cstride=5, rstride=5, facecolors=illuminated_surface, alpha=0.5)
     plt.show()
     
-def plot_convergence(times, values, expect_limit=None, convergence_type='algebraic',expect_residuals=None,
-                     expect_times=None, expect_order=None, ignore=1, p=2,
+def plot_convergence(times, values, name=None,title=None,reference='self', convergence_type='algebraic',expect_residuals=None,
+                     expect_times=None, plot_rate=None, ignore=1, p=2,
                      ignore_start=0):
     '''
     Show loglog or semilogy convergence plot.
     
-    Specify :code:`expect_limit` if exact limit is known. Otherwise limit is 
+    Specify :code:`reference` if exact limit is known. Otherwise limit is 
     taken to be last entry of :code:`values`.
     
     Distance to limit is computed as RMSE (or analogous p-norm if p is specified)
     
-    Specify either :code:`expect_order`(pass number or 'fit') or 
+    Specify either :code:`plot_rate`(pass number or 'fit') or 
     :code:`expect_residuals` and :code:`expect_times` to add a second plot with
     the expected convergence.
     
@@ -141,76 +144,76 @@ def plot_convergence(times, values, expect_limit=None, convergence_type='algebra
     :type times: List of positive numbers
     :param values: Outputs
     :type values: List of arrays
-    :param expect_limit: Exact solution
-    :type expect_limit: Array
+    :param reference: Exact solution
+    :type reference: Array
     :param convergence_type: Convergence type
     :type convergence_type: 'algebraic' or 'exponential'
     :param expect_residuals: Expected residuals
     :type expect_residuals: List of positive numbers
     :param expect_times: Expected runtimes
     :type expect_times: List of positive numbers
-    :param expect_order: Expected convergence order
-    :type expect_order: Real or 'fit'
-    :param ignore: If expect_limit is not provided, how many entries (counting
+    :param plot_rate: Expected convergence order
+    :type plot_rate: Real or 'fit'
+    :param ignore: If reference is not provided, how many entries (counting
        from the end) should be ignored for the computation of residuals. 
     :type ignore: Integer.
     :param ignore_start: How many entries counting from start should be ignored.
     :type ignore_start: Integer.
     :return: fitted convergence order
     '''
-    c_ticks = 30;
-    for value in values:
-        if hasattr(value, 'shape') and len(value.shape) == 1:
-            value = value.reshape(1, -1)  
+    c_ticks = 30
+    values,times = np.squeeze(values),np.squeeze(times)
+    assert(times.ndim==1)
     assert(len(times) == len(values))
     sorting = np.argsort(times)
     times = [times[i] for i in sorting]
     values = [values[i] for i in sorting]
-    if expect_limit is None:
-        plotlength = len(times) - ignore
-        if plotlength < 2:
+    if plot_rate==True:
+        plot_rate='fit'
+    if reference is 'self':
+        if not ignore>0:
+            raise ValueError('At least one data point must be used as reference solution and must be ignored in the plot')
+        if len(times)-ignore < 2:
             raise ValueError('Too few data points')
         limit = values[-1]
         times = times[0:-ignore]
+        values = values[0:-ignore]
     else:
-        plotlength = len(times);
-        limit = expect_limit
-        if hasattr(limit, 'shape') and len(limit.shape) == 1:
-            limit = limit.reshape(1, -1)
-    residuals = np.zeros([plotlength, 1])
-    for L in range(plotlength):
-        if hasattr(values[L], 'shape') and len(values[L].shape) > 0:
-            N = values[L].shape[0]
-        else:
-            N = 1
+        limit=np.squeeze(reference)
+    residuals = np.zeros(len(times))
+    N=limit.size
+    for L in range(len(times)):
         if p < np.Inf:
             residuals[L] = np.power(np.sum(np.power(np.abs(values[L] - limit), p) / N), 1. / p)  #
         else:
             residuals[L] = np.amax(np.abs(values[L] - limit))
     if convergence_type=='algebraic':
-        plt.loglog(times, residuals)
+        plt.loglog(times, residuals,label=name)
     else:
-        plt.semilogy(times,residuals)
+        plt.semilogy(times,residuals,label=name)
     if expect_times is not None and expect_residuals is not None:
         plt.loglog(expect_times, expect_residuals) 
     if convergence_type == 'algebraic':
-        transformed_x = np.log(times[ignore_start:]).reshape(-1)
+        transformed_x = np.log(times[ignore_start:])
     else:
-        transformed_x = np.array(times[ignore_start:]).reshape(-1)
-    transformed_y = np.log(residuals[ignore_start:]).reshape(-1)
-    transformed_y[transformed_y == -inf] = -17
-    if expect_order:
-        if expect_order == 'fit':
-            coeffs = np.polyfit(transformed_x,transformed_y,deg=1)
-        else:
+        transformed_x = times[ignore_start:]
+    transformed_y = np.log(residuals[ignore_start:])
+    #transformed_y[transformed_y == -inf] = -17
+    fitted_coeffs = np.polyfit(transformed_x,transformed_y,deg=1)
+    if plot_rate:
+        if plot_rate is 'fit':
+            coeffs=fitted_coeffs
+        else:  
             coeffs=np.zeros((2,))
-            coeffs[0]=expect_order
-            coeffs[1] = np.median(transformed_y-expect_order*transformed_x)
+            coeffs[0]=plot_rate
+            coeffs[1] = np.median(transformed_y-plot_rate*transformed_x)
         X = np.linspace(min(times), max(times), c_ticks)
         if convergence_type=='algebraic':
             plt.loglog(X, np.exp(coeffs[1]) * X ** (coeffs[0]))
         else:
             plt.semilogy(X,np.exp(coeffs[1]+coeffs[0]*X))
-    coeffs_return = np.polyfit(transformed_x, transformed_y, deg=1)
-    fitted_order = coeffs_return[0]     
-    return fitted_order
+    if name:
+        plt.legend(loc='upper right')
+    if title:
+        plt.title(title.format(fit=fitted_coeffs[0]))
+    return fitted_coeffs[0]
