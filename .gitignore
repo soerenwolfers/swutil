@@ -1,4 +1,6 @@
 *-blx.bib
+*.easyhpc*
+*.MPIMC*
 experiments/
 /smolyak/experiments/*
 /smolyak/experiments
