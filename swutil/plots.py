@@ -1,6 +1,7 @@
 '''
 Various plotting functions
 '''
+#TODO: Ignore in percentage. Skip left up to 50%, then skip right up to in sum 50% skipped
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
@@ -10,9 +11,10 @@ import warnings
 from numpy import inf
 import matplotlib2tikz
 from matplotlib.pyplot import savefig
-from swutil.aux import Empty
+from swutil.np_tools import weighted_median, precision_round
+import scipy.optimize
 
-def save(name,tex=True,pdf=True):
+def save(name,pdf=True,tex=False):
     if tex:
         matplotlib2tikz.save(name+'.tex')
     if pdf:
@@ -37,7 +39,7 @@ def plot_indices(mis, dims, weight_dict=None, N_q=1):
         warnings.warn('Sure you don\'t want to plot anything?')
         return
     if weight_dict:
-        values = weight_dict.values()
+        values = list(weight_dict.values())
         weight_function = lambda mi: weight_dict[mi]
     else:
         if N_q > 1:
@@ -125,9 +127,14 @@ def plot3D(X, Y, Z):
     ax.plot_surface(X, Y, Z, cstride=5, rstride=5, facecolors=illuminated_surface, alpha=0.5)
     plt.show()
     
+def plot_divergence(times,values,name=None,title=None,divergence_type='algebraic',expect_values=None,
+                    expect_times=None,plot_rate=None,p=2,preasymptotics=True,stagnation=False,marker=None,legend='lower right'):  
+    plot_convergence(times,values,name,title,np.zeros(values[0].shape),divergence_type,expect_values,expect_times,
+                     plot_rate,p,preasymptotics,stagnation,marker,legend)
+    
 def plot_convergence(times, values, name=None,title=None,reference='self', convergence_type='algebraic',expect_residuals=None,
-                     expect_times=None, plot_rate=None, ignore=1, p=2,
-                     ignore_start=0):
+                     expect_times=None, plot_rate='fit', p=2,preasymptotics=True,stagnation=False,marker=None,
+                     legend='lower left'):
     '''
     Show loglog or semilogy convergence plot.
     
@@ -144,8 +151,8 @@ def plot_convergence(times, values, name=None,title=None,reference='self', conve
     :type times: List of positive numbers
     :param values: Outputs
     :type values: List of arrays
-    :param reference: Exact solution
-    :type reference: Array
+    :param reference: Exact solution, or 'self' if not available
+    :type reference: Array or 'self'
     :param convergence_type: Convergence type
     :type convergence_type: 'algebraic' or 'exponential'
     :param expect_residuals: Expected residuals
@@ -161,25 +168,31 @@ def plot_convergence(times, values, name=None,title=None,reference='self', conve
     :type ignore_start: Integer.
     :return: fitted convergence order
     '''
-    c_ticks = 30
+    name=name or ''
+    color = next(plt.gca()._get_lines.prop_cycler)['color']
+    plt.gca().tick_params(labeltop=False, labelright=True,right=True,which='both')
+    plt.gca().yaxis.grid(which="minor", linestyle='-',alpha=0.5)
+    plt.gca().yaxis.grid(which="major", linestyle='-',alpha=0.6)
+    c_ticks = 3
+    ACCEPT_MISFIT=0.1
     values,times = np.squeeze(values),np.squeeze(times)
     assert(times.ndim==1)
     assert(len(times) == len(values))
     sorting = np.argsort(times)
-    times = [times[i] for i in sorting]
-    values = [values[i] for i in sorting]
+    times = times[sorting]
+    values = values[sorting]
     if plot_rate==True:
         plot_rate='fit'
     if reference is 'self':
-        if not ignore>0:
-            raise ValueError('At least one data point must be used as reference solution and must be ignored in the plot')
-        if len(times)-ignore < 2:
+        if len(times) <=2:
             raise ValueError('Too few data points')
         limit = values[-1]
-        times = times[0:-ignore]
-        values = values[0:-ignore]
+        limit_time = times[-1]
+        times = times[0:-1]
+        values = values[0:-1]
     else:
         limit=np.squeeze(reference)
+        limit_time=np.Inf
     residuals = np.zeros(len(times))
     N=limit.size
     for L in range(len(times)):
@@ -187,33 +200,170 @@ def plot_convergence(times, values, name=None,title=None,reference='self', conve
             residuals[L] = np.power(np.sum(np.power(np.abs(values[L] - limit), p) / N), 1. / p)  #
         else:
             residuals[L] = np.amax(np.abs(values[L] - limit))
-    if convergence_type=='algebraic':
-        plt.loglog(times, residuals,label=name)
-    else:
-        plt.semilogy(times,residuals,label=name)
-    if expect_times is not None and expect_residuals is not None:
-        plt.loglog(expect_times, expect_residuals) 
+    remove=np.isnan(times)|np.isinf(times)|np.isnan(residuals)|np.isinf(residuals)|(residuals==0)|((times==0)&(convergence_type=='algebraic'))
+    times=times[~remove]
+    if sum(~remove)<2:
+        raise ValueError('Too few valid data points')
+    residuals=residuals[~remove]
     if convergence_type == 'algebraic':
-        transformed_x = np.log(times[ignore_start:])
+        x = np.log(times)
+        limit_x=np.log(limit_time)
     else:
-        transformed_x = times[ignore_start:]
-    transformed_y = np.log(residuals[ignore_start:])
-    #transformed_y[transformed_y == -inf] = -17
-    fitted_coeffs = np.polyfit(transformed_x,transformed_y,deg=1)
-    if plot_rate:
-        if plot_rate is 'fit':
-            coeffs=fitted_coeffs
-        else:  
-            coeffs=np.zeros((2,))
-            coeffs[0]=plot_rate
-            coeffs[1] = np.median(transformed_y-plot_rate*transformed_x)
-        X = np.linspace(min(times), max(times), c_ticks)
-        if convergence_type=='algebraic':
-            plt.loglog(X, np.exp(coeffs[1]) * X ** (coeffs[0]))
+        x = times
+        limit_x = limit_time
+    min_x=min(x)
+    max_x=max(x)
+    y = np.log(residuals)
+    try:
+        rate,offset,min_x_fit,max_x_fit=_fit_rate(x,y,stagnation,preasymptotics,limit_x,have_rate=False if (plot_rate=='fit' or plot_rate is None) else plot_rate)
+    except FitError as e:
+        warnings.warn(str(e))
+        plot_rate=False
+        rate=None
+    if reference=='self':
+        if rate>=0:
+            warnings.warn('No sign of convergence')
         else:
-            plt.semilogy(X,np.exp(coeffs[1]+coeffs[0]*X))
+            real_rate=_real_rate(rate,l_bound=min_x_fit,r_bound=max_x_fit,reference_x=limit_x)
+            if (real_rate is None or abs((real_rate-rate)/rate) >= ACCEPT_MISFIT):
+                warnings.warn(('Self-convergence strongly affects plot and would yield misleading fit.')
+                              +(' Estimated true rate: {}.'.format(real_rate) if real_rate else '')
+                              +(' Fitted rate: {}.'.format(rate) if rate else ''))      
+    if plot_rate:
+        name+='(Fitted rate: {})'.format(precision_round(rate,1))
+        if convergence_type=='algebraic':
+            X = np.linspace(np.exp(min_x_fit), np.exp(max_x_fit), c_ticks)
+            plt.loglog(X, np.exp(offset) * X ** rate, '--',color=color)
+        else:
+            X = np.linspace(min_x_fit, max_x_fit, c_ticks)
+            plt.semilogy(X,np.exp(offset+rate*X),'--',color=color)
+    max_x_data=max_x
+    keep_1=(x<=max_x_data)
+    if convergence_type=='algebraic':
+        plt.loglog(np.array(times)[keep_1], np.array(residuals)[keep_1],label=name,marker=marker,color=color)
+        plt.loglog(np.array(times), np.array(residuals),marker=marker,color=color,alpha=0.5)
+    else:
+        plt.semilogy(np.array(times)[keep_1], np.array(residuals)[keep_1],label=name,marker=marker,color=color)
+        plt.semilogy(np.array(times), np.array(residuals),marker=marker,color=color,alpha=0.5)
+    if expect_times is not None and expect_residuals is not None:
+        plt.loglog(expect_times, expect_residuals,'--',marker=marker,color=color) 
     if name:
-        plt.legend(loc='upper right')
+        plt.legend(loc=legend)
     if title:
-        plt.title(title.format(fit=fitted_coeffs[0]))
-    return fitted_coeffs[0]
+        plt.title(title)
+    return rate
+
+def _keep(x,y,l_bound,r_bound):
+    keep=(x>=l_bound)&(x<=r_bound)
+    return x[keep],y[keep]
+
+def _qof(x_original,y_original,l_bound,r_bound,have_rate,scale_x,scale_y,p=1,prefer_length=1):
+    x,y=_keep(x_original,y_original,l_bound,r_bound)
+    if len(x)>=2:
+        coeffs=_fit(x,y,l_bound,r_bound,have_rate)
+        fitted_y=coeffs[1]+coeffs[0]*x
+        w=_weights(x)
+        return 5*2**(1/p)*np.sum(w*np.abs((y-fitted_y)/scale_y)**p)**(1/p)+prefer_length*(1-(r_bound-l_bound)/scale_x)
+    else:
+        return np.Inf
+    
+def _truncate(x,y,where,l_bound,r_bound,have_rate,prefer_length,min_distance,max_move):
+    min_x=min(x)
+    max_x=max(x)
+    bounds=np.linspace(min_x,max_x,20)
+    required_distance=min_distance*(max_x-min_x)
+    bounds=bounds[(bounds>l_bound)&(bounds<r_bound)]
+    if where=='left':
+        right_limit=min(r_bound-required_distance,min_x+max_move*(max_x-min_x))
+        bounds=bounds[bounds<right_limit]
+    if where=='right':
+        left_limit=max(l_bound+required_distance,max_x-max_move*(max_x-min_x))
+        bounds=bounds[bounds>left_limit]
+    scale_y=np.abs(max(y)-min(y))
+    if bounds.size:
+        scale_x=np.abs(max(x)-min(x))
+        misfit=np.Inf*np.ones(bounds.shape)
+        for i,bound in enumerate(bounds):
+            if where=='left':
+                misfit[i]=_qof(x,y,bound,r_bound,have_rate,scale_x,scale_y,prefer_length=prefer_length)
+            if where=='right':
+                misfit[i]=_qof(x,y,l_bound,bound,have_rate,scale_x,scale_y,prefer_length=prefer_length)
+        i_min=np.argmin(misfit)
+        if misfit[i_min]<np.Inf:
+            return bounds[i_min]
+    return l_bound if where=='left' else r_bound
+
+def _weights(x):
+    w = 1/2*((x[1:-1]-x[0:-2])+(x[2:]-x[1:-1]))
+    if len(x)<2:
+        print(1)
+    w = np.concatenate(((x[1]-x[0]).reshape(-1),w,(x[-1]-x[-2]).reshape(-1)))
+    w = w/np.sum(w)
+    return w
+
+def _fit(x,y,l_bound,r_bound,have_rate):
+    x,y=_keep(x,y,l_bound,r_bound)
+    if len(x)<2:
+        raise FitError()
+    if have_rate is False:
+        coeffs=np.polyfit(x,y,deg=1,w=np.sqrt(_weights(x)))
+    else:
+        coeffs=have_rate,weighted_median(y-have_rate*x,_weights(x))
+    return coeffs
+
+class FitError(Exception):
+    def __init__(self,cause=''):
+        super().__init__(' '.join(['Could not fit rate.',cause]))
+    
+def _fit_rate(x,y,stagnation,preasymptotics,reference_x,have_rate):
+    max_x=max(x)
+    min_x=min(x)
+    min_distance=0.2 if len(x)>10 else (0.5 if len(x)>=5 else 0.8)
+    attempts=10
+    l_bounds={'init':min_x}
+    r_bounds={'init':max_x,'selfconvergence':reference_x}
+    r_bound = lambda : min(r_bounds.values())
+    l_bound = lambda : max(l_bounds.values())
+    for attempt in range(1,attempts+1):
+        if stagnation:
+            r_bounds['stagnation']=_truncate(x,y,'right',l_bound=l_bound(),r_bound=max_x,have_rate=have_rate,prefer_length=0.5,min_distance=min_distance,max_move=1)
+        if preasymptotics:
+            l_bounds['preasymptotics']=_truncate(x,y,'left',r_bound=r_bound(),l_bound=min_x,have_rate=have_rate,prefer_length=1,min_distance=min_distance,max_move=attempt/attempts)
+    observed_rate,offset=_fit(x,y,l_bound(),r_bound(),have_rate) 
+    return observed_rate,offset,l_bound(),r_bound()
+    
+def _real_rate(observed_rate,l_bound,r_bound,reference_x):
+    real_rate=None
+    if observed_rate<-1e-12:
+        def toy_residual(x,real_rate):#-inf when x is too close to reference_x
+            with np.errstate(divide='ignore'):
+                return np.log(np.exp(real_rate*x)-np.exp(real_rate*reference_x))
+        def observed_rate_fn(real_rate):
+            observed_rate=(toy_residual(r_bound,real_rate)-toy_residual(l_bound,real_rate))/(r_bound-l_bound)
+            return observed_rate
+        while True:
+            try:
+                real_rate=scipy.optimize.bisect(lambda real_rate: observed_rate_fn(real_rate)-observed_rate, observed_rate, -1e-12, rtol=0.01)
+                break
+            except ValueError:#Probably because r_bound is so close to reference_x that even the slowest rate would still give huge observed rates
+                r_bound=max(l_bound+0.1*(r_bound-l_bound),r_bound/2)
+    return real_rate
+        
+def plot_nterm_convergence(coeffs):
+    T=np.power(np.sort(coeffs,0)[::-1],2)
+    times,values=range(1,len(T)),np.sqrt(np.sum(T)-np.cumsum(T)[:-1])
+    return plot_convergence(times,values,reference=0,plot_rate='fit')
+
+if __name__=='__main__':
+    X=2**(np.arange(20))
+    Y=np.power(X,-0.05)
+    Xmod=X[:-1]
+    Y_selfconvergence=np.abs(Y[:-1]-Y[-1])
+    Y_estimate=np.power(Xmod,-0.7)*0.85
+    Y_truerate=np.power(Xmod,-0.5)*0.8
+    plt.loglog(Xmod,Y_selfconvergence)
+    plt.loglog(Xmod,Y_estimate,'--')
+    plt.loglog(Xmod,Y_truerate,'--')
+    plt.figure(2)
+    plot_convergence(X,Y,preasymptotics=False)
+    plt.show()
