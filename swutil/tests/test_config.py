@@ -22,7 +22,7 @@ class TestConfig(unittest.TestCase):
         print(opts2)
         
         opts=Config()
-        opts.set_defaults({'testing':'True','test':125})
+        opts.set_defaults({'testing':'True','validate_args':125})
         opts['great']='Yo'
         fork=opts.fork('fork')
         print(opts._dict)

@@ -1,5 +1,6 @@
 from __future__ import absolute_import
-import collections
+import collections as coll
+from itertools import zip_longest
 
 def unique(seq):
     '''
@@ -7,7 +8,12 @@ def unique(seq):
     '''
     has = []
     return [x for x in seq if not (x in has or has.append(x))]
-
+def zip_equal(*iterables):
+    sentinel = object()
+    for combo in zip_longest(*iterables, fillvalue=sentinel):
+        if sentinel in combo:
+            raise ValueError('Iterables have different lengths')
+        yield combo
 class RFunction(dict):
     '''
     Real-valued function that supports operations of vector space of functions
@@ -70,7 +76,7 @@ class RFunction(dict):
             F[key] = other * self[key]
         return F
 
-class OrderedSet(collections.MutableSet):
+class OrderedSet(coll.MutableSet):
     '''
     http://code.activestate.com/recipes/576694/ under MIT license
     '''
