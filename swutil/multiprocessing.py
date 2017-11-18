@@ -12,19 +12,18 @@ import pathos
 import argparse
 from mpi4py import MPI
 import mpi4py
-from swutil.validation import validate_inputs, Choice, Bool, Function
+from swutil.validation import In, Bool, Function, validate_args
  
 def wrap_mpi(f):
     info = argparse.Namespace()
     info.wrap_MPI = True
-    return MultiProcessorWrapper(f, _MPI_processor, _MPI_finalizer, info)
-        
-@validate_inputs()
+    return MultiProcessorWrapper(f, _MPI_processor, _MPI_finalizer, info)   
+@validate_args()
 class EasyHPC(object):
     def __init__(self,
-                 backend:Choice('MP', 'MPI')='MP',
-                 input:Choice('implicitly many', 'many', 'one', 'count')='one',
-                 output:Choice('many', 'one')='one',
+                 backend:In('MP', 'MPI')='MP',
+                 input:In('implicitly many', 'many', 'one', 'count')='one',
+                 output:In('many', 'one')='one',
                  aux_output:Bool=True,  # Parellelize only first entry of output if tuple
                  reduce:Function=NotPassed,
                  split_job=NotPassed
@@ -41,8 +40,13 @@ class EasyHPC(object):
         self.info.reduce = reduce
         self.info.wrap_MPI = False
         self.info.aux_output = aux_output 
-        self.split_job = NotPassed
-
+        self.info.split_job = split_job
+        if self.info.input == 'implicitly many':
+            if self.info.output == 'many':
+                return ValueError('Do not know how to handle functions that have implicitly many inputs and many outputs')
+        if self.info.output == 'one':
+            if NotPassed(self.info.reduce):
+                raise ValueError('Functions that return single outputs must specify how to reduce multiple outputs using `reduce`')
     def __call__(self, f):
         return MultiProcessorWrapper(f, self.processor, self.finalizer, self.info)
     
@@ -146,17 +150,23 @@ def _common_work(f_filename, f_name, M, N, rank, args, kwargs, info):
         elif info.input == 'implicitly many':
             jobs = [M]
             while len(jobs) < N:
-                jobs = list(itertools.chain(*[info.split_job(job) for job in jobs]))
+                if 2*len(jobs)<=N:
+                    jobs = list(itertools.chain(*[info.split_job(job) for job in jobs]))
+                else:
+                    need=N-len(jobs)
+                    jobs=list(itertools.chain(*([info.split_job(job) for job in jobs[:need]]+[jobs[need:]])))
     if isinstance(f, MultiProcessorWrapper):
         kwargs['__second_call'] = True
     if not info.wrap_MPI and info.input == 'one':
-        if M is not NotPassed:
+        if Passed(M):
             return  [f(job, *args, **kwargs) for job in jobs[rank]]
         else:
             return [f(**kwargs) for job in jobs[rank]]
     else:
         if Passed(M):
-            return f(jobs[rank], *args, **kwargs)
+            #print(jobs[rank])
+            out= f(jobs[rank], *args, **kwargs)
+            print(jobs[rank],out)
         else:
             return f(**kwargs)
         
