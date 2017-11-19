@@ -1,9 +1,9 @@
 import numpy as np
-from swutil.validation import validate_inputs, NDim
+from swutil.validation import NDim
 from math import floor
-from cmath import log10
+
 def is_1d(array):
-    return np.squeeze(array).ndim==1
+    return np.squeeze(array).ndim == 1
 
 def grid_evaluation(X, Y, f):
     '''
@@ -22,10 +22,9 @@ def grid_evaluation(X, Y, f):
     XX = np.reshape(np.concatenate([X[..., None], Y[..., None]], axis=2), (X.size, 2), order='C')
     return np.reshape(f(XX), X.shape, order='C')  
  
-def precision_round(x,precision=0):
-    return round(x, precision-int(floor(np.log10(abs(x))))) 
+def precision_round(x, precision=0):
+    return round(x, precision - int(floor(np.log10(abs(x))))) 
 
-@validate_inputs()
 def orthonormal_complement_basis(v:NDim(1)):
     '''
     Return orthonormal basis of complement of vector.
@@ -34,7 +33,7 @@ def orthonormal_complement_basis(v:NDim(1)):
     :return: Matrix whose .dot() computes coefficients w.r.t. an orthonormal basis of the complement of v 
         (i.e. whose row vectors form an orthonormal basis of the complement of v)
     '''
-    _,_,V=np.linalg.svd(np.array([v]))
+    _, _, V = np.linalg.svd(np.array([v]))
     return V[1:]
 
 def weighted_median(values, weights):

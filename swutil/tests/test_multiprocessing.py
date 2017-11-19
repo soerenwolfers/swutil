@@ -7,71 +7,87 @@ def rand(M):
     return numpy.random.rand(M,1)
 
 def func(M):
-    #ca=numpy.random.rand(M,1)
     ca=rand(M)
     for j in range(len(ca)):
         ca[j]=ca[j]**2
     return ca
 
+def split_interval(interval):
+    (a,b)=interval
+    return (a,(b+a)/2),((b+a)/2,b)
+
+def my_sum(elements):
+    return sum(elements)
+
+def _integrate_x(interval,h=2**(-10)):
+    (a,b)=interval
+    N=max(1,(b-a)/h)
+    x=numpy.linspace(a,b,N,endpoint=False)
+    out = numpy.sum(h*x)
+    return out
+integrate_x=EasyHPC(backend='MPI',n_tasks='implicitly many',n_results='one',split_job=split_interval,reduce=my_sum)(_integrate_x)
+
 @wrap_mpi
 def external():
     pass
     
-@EasyHPC(backend='MPI',input='count',output='many')
+@EasyHPC(backend='MPI',n_tasks='count',n_results='many')
 def f(M):
     external()
     return numpy.zeros(M)
 
-@EasyHPC(backend='MPI',input='count',output='many')
+@EasyHPC(backend='MPI',n_tasks='count',n_results='many')
 def func_MPI(M):
     return func(M)
 
-@EasyHPC(backend='MP',input='count',output='many')
+@EasyHPC(backend='MP',n_tasks='count',n_results='many')
 def func_MP(M):
     return func(M)
 
 def MPI(M):
-    f=EasyHPC(backend='MPI',input='count',output='many')(func)
+    f=EasyHPC(backend='MPI',n_tasks='count',n_results='many')(func)
     return f(M)
 
 def MP(M):
-    f=EasyHPC(backend='MP',input='count',output='many')(func)
+    f=EasyHPC(backend='MP',n_tasks='count',n_results='many')(func)
     return f(M)
 
-@EasyHPC(backend='MPI',input='count',output='many')
+@EasyHPC(backend='MPI',n_tasks='count',n_results='many')
 def MPIMP(M):
-    a=EasyHPC(backend='MPI',input='count',output='many')(func)
+    a=EasyHPC(backend='MPI',n_tasks='count',n_results='many')(func)
     return a(M)
     
-@EasyHPC(backend='MPI',input='many',output='one',reduce=sum)
+@EasyHPC(backend='MPI',n_tasks='many',n_results='one',reduce=sum)
 def MPIsum(elements):
     return sum(elements)
 
-@EasyHPC(backend='MP',input='many',output='one',reduce=sum)
+@EasyHPC(backend='MP',n_tasks='many',n_results='one',reduce=sum)
 def MPsum(elements):
     return sum(elements)
 
 class TestMultiprocessing(unittest.TestCase):
     def setUp(self):
         self.N=10000000  
+    def test_implicitly_many(self):
+        self.assertAlmostEqual(integrate_x([0,1]),1/2,delta=1e-2)
     def testnoMP(self):
-        func(self.N)  
+        self.assertEqual(func(self.N).size,self.N)  
     def testMPI(self):
-        print(func_MPI(self.N).shape)
-        print(MPI(self.N).shape)    
+        self.assertAlmostEqual(func_MPI(self.N).size,self.N,delta=self.N/10)
+        self.assertAlmostEqual(MPI(self.N).size,self.N,delta=self.N/10)    
     def testMP(self):
-        print(func_MP(self.N).shape)
-        print(MP(self.N).shape)
+        self.assertAlmostEqual(func_MP(self.N).size,self.N,delta=self.N/10)
+        self.assertAlmostEqual(MP(self.N).size,self.N,delta=self.N/10)
     def testMPIMP(self):
-        print(MPIMP(self.N).shape)
+        self.assertAlmostEqual(MPIMP(self.N).size,self.N,delta=self.N/10)
     def testWrapMPI(self):
-        print(f(self.N).shape)
+        self.assertAlmostEqual(f(self.N).size,self.N,delta=self.N/10)
     def testMPIlists(self):
-        print(MPIsum(numpy.array([2*i for i in range(self.N)])))
+        self.assertEqual(MPIsum(numpy.array([2*i for i in range(self.N)])),self.N*self.N-self.N)
     def testMPlists(self):
-        print(MPsum(numpy.array([2*i for i in range(self.N)])))   
+        self.assertEqual(MPsum(numpy.array([2*i for i in range(self.N)])),self.N*self.N-self.N)   
               
 if __name__ == "__main__":
-    #print_runtime(unittest.main)(exit=False)
-    suite=unittest.TestLoader().loadTestsFromName(name='test_multiprocessing.TestMultiprocessing.testMPIlists')
-    unittest.TextTestRunner().run(suite)
+    print_runtime(unittest.main)(exit=False)
+    #suite=unittest.TestLoader().loadTestsFromName(name='test_multiprocessing.TestMultiprocessing.test_implicitly_many')
+    #unittest.TextTestRunner().run(suite)

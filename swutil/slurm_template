@@ -1,0 +1,15 @@
+#!/bin/sh
+# -n chooses number of tasks, -N number of nodes. In former case ncpus=ntask, in second case nnodes=ntasks (those are only defaults that can be changed in call to srun)
+#SBATCH -n 2
+#SBATCH -t 00:01:00
+#SBATCH -o /scratch/dragon/amd/wolfersf/temp
+#SBATCH -e /scratch/dragon/amd/wolfersf/tempe
+# batch or debug partisions on dragon##
+#SBATCH -p debug
+module purge
+module load anaconda3
+
+#mpirun python -c 'from mpi4py import MPI', this would require loading an mpi package, but this is not necessary because srun can be used instead
+srun python -m mpi4py.bench helloworld
+srun -n 2  python -c 'import os; print(os.environ["SLURM_NTASKS"])'
+srun -n 1  python -c 'import os; print(os.environ["SLURM_NTASKS"])'

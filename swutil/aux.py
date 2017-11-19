@@ -1,25 +1,12 @@
 import numpy
 import random
 import string
-class NotPassedClass():
-    def __bool__(self):
-        return False
-    def __str__(self):
-        return '<NotPassed>'
-    def __repr__(self):
-        return '<NotPassed>'
-    def __eq__(self,other):
-        return isinstance(other,NotPassedClass)
-    def __req__(self,other):
-        return isinstance(other,NotPassedClass)
-    def __call__(self,other):
-        return isinstance(other,NotPassedClass)
-    
-NotPassed=NotPassedClass()
-def Passed(other):
-    return not NotPassed(other)
+import shutil
 
 def chain(*fs):
+    '''
+    Concatenate functions
+    '''
     def chained(x):
         for f in reversed(fs):
             if f:
@@ -27,7 +14,16 @@ def chain(*fs):
         return x
     return chained
 
+def cmd_exists(cmd):
+    '''
+    Check whether given command is available on system
+    '''
+    return shutil.which(cmd) is not None
+
 def split_list(l,N):
+    '''
+    Subdivide list into N lists
+    '''
     npmode = isinstance(l,numpy.ndarray)
     if npmode:
         l=list(l)
@@ -45,8 +41,8 @@ def split_list(l,N):
     return s
 
 def random_string(length):
-    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
-    
-if __name__=='__main__':
-    for i in range(1,14):
-        print(i,split_list(list(range(12)),i))
+    '''
+    Generate alphanumerical string. Hint: Check if module tempfile has what you want, especially when you are concerned about race conditions
+    '''
+    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
+        
