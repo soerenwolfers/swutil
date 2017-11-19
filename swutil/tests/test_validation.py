@@ -1,26 +1,62 @@
 import unittest
 from swutil.validation import validate, Nonpositive, ValidationError,\
-    Positive, Or, Negative, Function, Integer, All, Bool, String, Float, NDim,\
-    Shape, Dict, Choice, Set, List, Tuple, Lower, Upper, Nonnegative, InInterval,\
+    Positive, Negative, Function, Integer,  Bool, String, Float, NDim,\
+    Shape, Dict, In, Set, List, Tuple, Lower, Upper, Nonnegative, InInterval,\
     InRange, Any, Length, Iterable, Allows, Has, Satisfies, Instance, Implements,\
-    validate_inputs
+    validate_args, Equals, Arg, Sum, NotPassed
 from math import inf
 import os
 from swutil.decorators import declaration, implementation, print_runtime
-from swutil.aux import NotPassed
 
 @declaration
 def foo():
     pass 
-@validate_inputs('a|b a>c')
+@validate_args(Arg('a|b'),Arg('a>c'))
 def bar(a:Integer,b=1,c=0):
     return a,b,c
-@validate_inputs(passed_conditions='a^c')
+@validate_args('a^c')
 def bar2(a:Integer,b:String,c):
     return a,b,c
+@validate_args(Arg('a',In('rest'))>Arg('b',In('test')))
+def bar3(a:String,b:String):
+    return a,b
+@validate_args(Arg('a>b',Lower))
+def bar4(a:String,b:Upper&String):
+    return a,b
+@validate_args(Arg('a>b'))
+def bar5(a:Integer,b:Bool):
+    return a,b
+@validate_args(Arg('a&b')>Arg('c'))
+def bar6(a,b,c):
+    return a,b,c
+@validate_args()
+def bar7(a:Integer):
+        return a
 class TestSpecifications(unittest.TestCase):
     def test_validate_inputs(self):
+        with self.assertRaises(TypeError):
+            bar7(a=1,b=2)
+        self.assertEqual(bar7(1),1)
+        with self.assertRaises(TypeError):
+            bar7('bing')
+        self.assertEqual(bar6(a=1,b=0,c=1),(1,0,1))
+        self.assertEqual(bar6(a=1,b=1,c=1),(1,1,1))
+        with self.assertRaises(TypeError):
+            bar6(a=1,b=1,c=0)
+        self.assertEqual(bar5(a=1,b=True),(1,True))
+        with self.assertRaises(TypeError):
+            bar5(a=1,b=False)
+        with self.assertRaises(TypeError):
+            bar5(b=0)
         self.assertEqual(bar(b=1),(NotPassed,1,0))
+        self.assertEqual(bar3(a='Rest',b='wert'),('Rest','wert'))
+        self.assertEqual(bar4(a='Hower',b='LOWER'),('Hower','LOWER'))
+        with self.assertRaises(TypeError):
+            bar4(a='hower',b='DOWER')
+        with self.assertRaises(TypeError):
+            bar4(a='Hower',b='dower')
+        with self.assertRaises(TypeError):
+            bar3(a='rest',b='Test')
         with self.assertRaises(TypeError):
             bar(a=1)
         self.assertEqual(bar(a=1,c=2),(1,1,2))
@@ -29,6 +65,14 @@ class TestSpecifications(unittest.TestCase):
             bar(a=1,c=0)
         with self.assertRaises(TypeError):
             bar(a='asd')
+    def test_Equals(self):
+        self.assertEqual(validate('best',Equals('best')),'best')
+        with self.assertRaises(ValidationError):
+            validate('best',Equals('Best'))
+    def test_Sum(self):
+        self.assertEqual(validate((1,2),Sum(3)),(1,2))
+        with self.assertRaises(ValidationError):
+            validate((1,2),Sum(5))
     def test_Nonpositive(self):
         self.assertEqual(validate(0,Nonpositive),0)
         self.assertEqual(validate(1,Nonpositive(lenience=2)),0)
@@ -39,10 +83,9 @@ class TestSpecifications(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(0,Positive)
     def test_Or(self):
-        self.assertEqual(validate(1,Or(Positive,Negative)),1)
         self.assertEqual(validate(1,Positive|Negative),1)
         with self.assertRaises(ValidationError):
-            validate("best",Or(Positive,Negative))
+            validate("best",Positive|Negative)
         with self.assertRaises(ValidationError):
             validate(0,Positive|Negative)
     def test_Function(self):
@@ -57,7 +100,6 @@ class TestSpecifications(unittest.TestCase):
             c(1)
     def test_All(self):
         self.assertEqual(validate(1,Positive&Integer),1)
-        self.assertEqual(validate(2,All(Positive,Integer)),2)
         with self.assertRaises(ValidationError):
             validate(1.4,Positive&Integer)
         with self.assertRaises(ValidationError):
@@ -106,30 +148,30 @@ class TestSpecifications(unittest.TestCase):
         self.assertEqual(validate({'1':2},Dict(key_spec=Integer)),{1:2})
         self.assertEqual(validate({'1':2},Dict(key_spec=Integer,value_spec=String(lenience=2))),{1:'2'})
         d={'best':1,'cest':2,'test':0}
-        self.assertEqual(validate(d,Dict(bool_conditions='best !test best|test best cest (test,!cest)>cest !cest>test')),d)
-        self.assertEqual(validate(d,Dict(bool_conditions='best-cest')),d)
+        self.assertEqual(validate(d,Arg('best')&~Arg('test')&(Arg('best')|Arg('test'))&Arg('cest')&((Arg('test')|~Arg('cest'))>Arg('cest'))&(~Arg('cest')>Arg('test'))),d)
+        self.assertEqual(validate(d,Arg('best')==Arg('cest')),d)
         with self.assertRaises(ValidationError):
-            validate(d,Dict(bool_conditions='best^cest'))
+            validate(d,Arg('best')^Arg('cest'))
         with self.assertRaises(ValidationError):
-            validate(d,Dict(bool_conditions='best>test'))
+            validate(d,Arg('best')>Arg('test'))
         with self.assertRaises(ValidationError):
-            validate(d,Dict(bool_conditions='test|test'))
+            validate(d,Arg('test')|Arg('test'))
         with self.assertRaises(ValidationError):
             validate(1,Dict)
         with self.assertRaises(ValidationError):
             validate({2:'best'},Dict(value_spec=Integer))
     def test_Choice(self):
-        self.assertEqual(validate('best',Choice('test','mest','best')),'best')
-        self.assertEqual(validate('Best',Choice('test','mest','best')),'best')
-        self.assertEqual(validate('b',Choice('test','mest','best',lenience=2)),'best')
+        self.assertEqual(validate('best',In('test','mest','best')),'best')
+        self.assertEqual(validate('Best',In('test','mest','best')),'best')
+        self.assertEqual(validate('b',In('test','mest','best',lenience=2)),'best')
         with self.assertRaises(ValidationError):
-            validate('Best',Choice('test','mest','best',lenience=0))
+            validate('Best',In('test','mest','best',lenience=0))
         with self.assertRaises(ValidationError):
-            validate('b',Choice('test','best','brest',lenience=2))
+            validate('b',In('test','best','brest',lenience=2))
         with self.assertRaises(ValidationError):
-            validate('best',Choice('test','mest','Best'))
+            validate('best',In('test','mest','Best'))
         with self.assertRaises(ValidationError):
-            validate('best',Choice('test','tEst','Best'))
+            validate('best',In('test','tEst','Best'))
     def test_Set(self):
         self.assertEqual(validate({'best'},Set),{'best'})
         self.assertEqual(validate([1,2],Set),{1,2})
@@ -282,8 +324,12 @@ class TestSpecifications(unittest.TestCase):
         self.assertEqual(validate(-1,Negative),-1)
         with self.assertRaises(ValidationError):
             validate(0,Negative)
+    def test_Inverted(self):
+        self.assertEqual(validate(1,~Negative),1)
+        with self.assertRaises(ValidationError):
+            validate('UPPER',~Upper)
             
 if __name__=="__main__":
     print_runtime(unittest.main)(exit=False)
-    #suite=unittest.TestLoader().loadTestsFromName(name='test_specifications.TestSpecifications.test_Choice')
+    #suite=unittest.TestLoader().loadTestsFromName(name='test_validation.TestSpecifications.test_validate_inputs')
     #unittest.TextTestRunner().run(suite)
