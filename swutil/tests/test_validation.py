@@ -121,6 +121,7 @@ class TestSpecifications(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(tmp(),Float)
     def test_Integer(self):
+        self.assertEqual(validate('1',Positive&Integer),1)
         self.assertEqual(validate(1,Integer),1)
         self.assertEqual(validate('1',Integer),1)
         self.assertEqual(validate(2.1,Integer(lenience=2)),2)

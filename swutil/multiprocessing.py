@@ -10,7 +10,7 @@ import sys
 import subprocess
 import pathos
 import argparse
-from mpi4py import MPI
+
 from swutil.validation import In, Bool, Function, validate_args, Passed, NotPassed
 #TODO: Add optional logging
 def wrap_mpi(f):
@@ -27,7 +27,7 @@ class EasyHPC(object):#DecoratorFactory
                  reduce:Function=NotPassed,
                  split_job=NotPassed
                  ):
-        if backend == 'MPI':
+        if backend == 'MPI': 
             self.processor = _MPI_processor
             self.finalizer = _MPI_finalizer
         if backend == 'MP':
@@ -77,6 +77,7 @@ class MultiProcessorWrapper(object):
                 self.finalizer(ID)
             return out
 def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info):
+    from mpi4py import MPI
     if info.wrap_MPI:
         child = MPI.COMM_SELF.Spawn(
             sys.executable,
@@ -108,6 +109,7 @@ def _MP_processor(args, kwargs, M, f, f_path, f_name, ID, info):
     return r, ID
 
 def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
+    from mpi4py import MPI
     if mpi_child:
         parent = MPI.Comm.Get_parent()
         (args, kwargs, M, f_filename, f_name, info) = parent.bcast(None, root=0)
@@ -141,7 +143,7 @@ def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
         
 def _MP_worker(arg):
     (f_filename, f_name, args, kwargs, M, rank, N, info) = arg
-    numpy.random.seed(rank)
+    numpy.random.seed(rank)#TODO replace by randomint+rank
     return _common_work(f_filename, f_name, M, N, rank, args, kwargs, info) 
            
 def _common_work(f_filename, f_name, M, N, rank, args, kwargs, info):
