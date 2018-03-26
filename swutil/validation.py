@@ -14,6 +14,7 @@ from swutil.errors import ValidationError
 import numpy
 import timeit
 import warnings
+import math
 
 # Don't use brackets for subspecifications because of lack of support for keyword arguments
 # _validate has to raise error instead of returning None
@@ -48,19 +49,21 @@ class _NotPassed():
     def __call__(self, other):
         return isinstance(other, _NotPassed)
 NotPassed = _NotPassed()
-def Passed(arg):
-    return not NotPassed(arg)
-#class _Passed():
-#    '''
-#    
-#    '''
-#    @staticmethod
-#    def valid(self, arg):
-#        return not NotPassed(arg)
-#    @staticmethod
-#    def __call__(arg):
-#        return not NotPassed(arg)
-#Passed = _Passed()
+
+#def Passed(arg):
+#    return not NotPassed(arg)
+class _Passed():
+    '''
+    
+    '''
+    @staticmethod
+    def valid(arg):
+        return not NotPassed(arg)
+    @staticmethod
+    def __call__(arg):
+        return not NotPassed(arg)
+
+Passed = _Passed()
 
 class Specification(ABC):
     '''
@@ -130,6 +133,8 @@ def validate(arg, spec):
     :return: Validated object
     '''
     rejection_subreason = None
+    if spec is None:
+        return arg
     try:
         return spec._validate(arg)
     except Exception as e:
@@ -171,16 +176,20 @@ def _validate_many(args, specs, defaults,passed_conditions,value_conditions,
                  '`allow_unknowns=True` to avoid this error)'.format(passed_but_not_specified)))
         else:
             for arg in passed_but_not_specified:
-                specs[arg] = unknowns_spec
+                if unknowns_spec is not None:
+                    specs[arg] = unknowns_spec
     if passed_conditions:
         validate(args, Dict(passed_conditions=passed_conditions))
     for arg in specs:
-        if not arg in args or NotPassed(args[arg]):
+        if (not arg in args) or NotPassed(args[arg]):
             if arg in defaults:
-                validated_args[arg] = defaults[arg]
+                if isinstance(defaults[arg],DefaultGenerator):
+                    validated_args[arg] = defaults[arg]()
+                else:
+                    validated_args[arg] = defaults[arg]
             else:
                 validated_args[arg] = NotPassed
-        else:
+        else:#Default values and NotPassed values are not validated. Former has advantage that default values need to be `correct` without validation and thus encourage the user to pass stuff that doesn't need validation, and is therefore faster
             validated_args[arg] = validate(args[arg], specs[arg])
     if value_conditions:
         validated_args = validate(validated_args, value_conditions)
@@ -204,7 +213,7 @@ class validate_args():  # DecoratorFactory
             unknowns_specification = unknowns_specification or Any
             for condition in conditions:
                 if not isinstance(condition, (six.string_types, Specification)):
-                    raise TypeError('`value` must be string or instance of `Specification`')
+                    raise TypeError('`conditions` must be strings or instances of `Specification` (failed on {})'.format(condition))
             if not isinstance(allow_unknowns, builtins.bool):
                 raise TypeError('`allow_unknowns` must be boolean')
             if not isinstance(unknowns_specification, Specification):
@@ -261,12 +270,15 @@ class _ValidatedInputFunction():
                 else:
                     self.spec_dict[name] = param.annotation        
             else:
-                self.spec_dict[name] = Any
+                self.spec_dict[name] = None
             if param.default is not inspect._empty: 
                 self.defaults[name] = param.default#Maybe deepcopy the defaults. In that case, this needs to be moved into each function call
         self.warned = not warnings
         functools.update_wrapper(self, self.f)
-        
+    
+    def __get__(self,obj,type=None):  # @ReservedAssignment
+        return functools.partial(self,obj)
+    
     def __call__(self, *args, **kwargs):
         if self.validate:
             if not self.warned:
@@ -298,9 +310,9 @@ class _ValidatedInputFunction():
                         try_kwargs = False
             if (try_args and args) or (try_kwargs and kwargs):  # More passed than expected
                 if (try_args and args):
-                    raise TypeError('{} was given {} too many positional arguments'.format(self.f.__qualname__, len(args)))
+                    raise TypeError('{} was given {} too many positional arguments: {}'.format(self.f.__qualname__, len(args),args))
                 if (try_kwargs and kwargs):
-                    raise TypeError('{} was given {} too many keyword arguments'.format(self.f.__qualname__, len(kwargs)))
+                    raise TypeError('{} was given {} unrecognized keyword arguments: {}'.format(self.f.__qualname__, len(kwargs),kwargs))
             try:
                 check_dict = _validate_many(args=check_dict, specs=self.spec_dict, defaults=self.defaults,
                     passed_conditions=self.passed,
@@ -337,7 +349,13 @@ class _ValidatedInputFunction():
             return out
         else:
             return self.f(*args, **kwargs)
-        
+
+class DefaultGenerator():
+    def __init__(self,obj):
+        self.obj=obj
+    def __call__(self):
+        return self.obj()
+  
 class _Connection(Specification):    
     def __init__(self, *specs, connective):
         self.specs = specs
@@ -350,8 +368,8 @@ class _Connection(Specification):
             except Exception as e:
                 if e.args: 
                     rejection_reason += str(e) 
-                if self.connective == _and:  # Short circuit: invalid
-                    raise ValidationError(rejection_reason)
+                #if self.connective == _and:  # Short circuit: invalid. ## Cannot short circuit, otherwise Positive&Integer wouldn't work on string argument, for example
+                #    raise ValidationError(rejection_reason)
             else:
                 if self.connective == _or:  # Short circuit: valid
                     return arg
@@ -363,8 +381,8 @@ class _Connection(Specification):
     def valid(self, arg):
         return self.connective(spec.valid(arg) for spec in self.specs)
     def __str__(self):
-        return self.connective.__str__.join(str(spec) for spec in self.specs)
-    
+        return '('+self.connective.__str__.join(str(spec) for spec in self.specs)+')'
+
 class Equals(Specification):
     def __init__(self, other):
         self.other = other
@@ -372,7 +390,13 @@ class Equals(Specification):
         return arg == self.other
     def __str__(self):
         return ('Equals({})'.format(self.other))
-
+class Not(Specification):
+    def __init__(self,other):
+        self.other = other
+    def valid(self,arg):
+            return arg != self.other
+    def __str__(self):
+        return ('Not({})'.format(self.other))
 class Sum(Specification):
     def __init__(self, s):
         self.s = s
@@ -441,17 +465,17 @@ Float = _Float()
 class _Integer(Specification):
     @staticmethod
     def valid(arg):
-        return isinstance(arg, builtins.int)
+        return isinstance(arg, builtins.int) or arg == math.inf
     @staticmethod
     def forgive(arg, level):
         if level == 1:
             if isinstance(arg, six.string_types):
-                try:
-                    return ast.literal_eval(arg)
-                except Exception:
-                    pass
-            if isinstance(arg, builtins.float) and arg.is_integer():
-                return int(arg)
+                arg = float(arg)
+            if isinstance(arg, builtins.float):
+                if arg.is_integer():
+                    return int(arg)
+                elif arg == math.inf:
+                    return arg
             if isinstance(arg, numpy.ndarray) and issubclass(arg.dtype, numbers.Integral):
                 try:
                     return int(arg)
@@ -602,15 +626,12 @@ class _Dict(Specification):
         if level == 1 and not self.valid(arg):
             if NotPassed(arg):
                 return builtins.dict()
-            ret = builtins.dict()
             try:
-                for key in arg:
-                    ret[key] = arg[key]
-                return ret
+                return builtins.dict(arg)
             except Exception:
                 pass
         if level == 2:
-            if isinstance(arg, (builtins.list, builtins.tuple)):
+            if isinstance(arg, (builtins.list, builtins.tuple)) or (isinstance(arg,numpy.ndarray) and arg.squeeze().ndim == 1):
                 d = builtins.dict()
                 for i in range(len(arg)):
                     d[i] = arg[i]
@@ -760,7 +781,7 @@ class _Upper(Specification):
 Upper = _Upper()
 
 class InInterval(Specification):
-    def __init__(self, l, r, lo=False, ro=False, lenience=1):
+    def __init__(self, l=-math.inf, r=math.inf, lo=False, ro=False, lenience=1):
         self.l = l
         self.r = r
         self.lo = lo
@@ -982,7 +1003,7 @@ def _parse_required_results_group(subject_group):
                          (' Use only the connectives `^`,`|` and `->`' if '&' in subject_group else ''))
     return parameters_and_results
 
-def _validate_dict_conditions(args:Dict, required_results_iterables_and_connectives, type='passed'):
+def _validate_dict_conditions(args:Dict, required_results_iterables_and_connectives, type='passed'):  # @ReservedAssignment
     if not isinstance(args, builtins.dict):
         raise TypeError('`args` must be a dict')
     if not isinstance(required_results_iterables_and_connectives, (builtins.list, builtins.tuple)):
@@ -1023,6 +1044,13 @@ def _validate_dict_conditions(args:Dict, required_results_iterables_and_connecti
     return args
 
 class Arg(Specification):
+    '''
+    Validates entries of a dictionary. 
+    
+    E.g.: `Arg('a>b')` ensures that `b` evaluates to True if `a` does
+          `Arg('a&b',Lower)` ensures that `a` and `b` are both `Lower`
+          `Arg('a^b',Positive)` ensures that exactly one of `a` and `b` are positive
+    '''
     def __init__(self, names, spec=NotPassed):
         self.names, connective = _parse_condition(names, seps=['&', '|', '^', '>', '=='])
         if connective == 'and':
@@ -1037,7 +1065,7 @@ class Arg(Specification):
             self.connective = _xor
         elif connective == 'iff':
             self.connective = _equal
-        if not (NotPassed(spec) or isinstance(spec, Specification)):
+        if not (NotPassed(spec) or isinstance(spec, Specification) or spec == Passed or spec == NotPassed):
             raise TypeError('`spec` must be instance of `Specification`')
         self.spec = spec 
     def valid(self, args):

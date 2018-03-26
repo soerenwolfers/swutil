@@ -3,22 +3,78 @@ Various plotting functions
 '''
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import cm
+from matplotlib import cm, patches
 from matplotlib.colors import LightSource
 import matplotlib
 import warnings
 import matplotlib2tikz
 from matplotlib.pyplot import savefig
-from swutil.np_tools import weighted_median
+from swutil.np_tools import weighted_median, grid_evaluation
 import scipy.optimize
+from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport. Axes3D is needed for projection = '3d' below @UnusedImport
+from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer
+from numpy import meshgrid
+from matplotlib.backends.backend_pdf import PdfPages
+import os
+from collections import OrderedDict
 
-def save(name, pdf=True, tex=False):
+def _classify(properties,into='path'):
+    '''
+    Turns keyword pairs into path
+    '''
+    subdirs = []
+    for property,value in properties.items():  # @ReservedAssignment
+        if Bool.valid(value):
+            subdirs.append(('' if value else 'not_')+'{}'.format(property))
+        elif String.valid(value):
+            subdirs.append(value)
+        elif (Float|Integer).valid(value):
+            subdirs.append('{}{}'.format(property,value))
+        else:
+            subdirs.append('{}_{}'.format(property,value))
+    path = os.path.join(*subdirs)
+    head,_ = os.path.split(path)
+    if not os.path.exists(head):
+        os.makedirs(head)
+    return path
+
+def save(*name, pdf=True, tex=False,figs = None):
+    if len(name)==1:
+        name = name[0]
+    else:
+        if len(name) % 2 == 1:
+            raise ValueError('Number of arguments must be even')
+        properties=OrderedDict()
+        for j in range(len(name)//2):
+            properties[name[2*j]]=name[2*j+1]
+        name = _classify(properties)
     if tex:
+        if figs is not None:
+            raise ValueError('tex only supports saving current figure')
         matplotlib2tikz.save(name + '.tex')
     if pdf:
-        savefig(name + '.pdf', bbox_inches='tight')
-
-def plot_indices(mis, dims, weight_dict=None, N_q=1):
+        if figs=='current':
+            savefig(name + '.pdf', bbox_inches='tight')
+        else:
+            if figs is None or figs=='all':
+                figs = plt.get_fignums()
+            savenames = {n:name+'_{:d}.pdf'.format(n) for n in figs}
+            for n in figs:
+                plt.figure(n)
+                savefig(savenames[n],bbox_inches='tight')
+            from PyPDF2 import PdfFileMerger
+            merger = PdfFileMerger()
+            for n in figs:
+                merger.append(open(savenames[n], 'rb'))
+            with open(name+'.pdf', "wb") as fout:
+                merger.write(fout)
+            for n in figs:
+                try:
+                    os.remove(savenames[n])
+                except:
+                    pass
+#@validate_args()
+def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
     '''
     Plot multi-index set
     
@@ -30,9 +86,32 @@ def plot_indices(mis, dims, weight_dict=None, N_q=1):
     :type weight_dict: Dictionary
     :param N_q: Number of percentile-groups plotted in different colors
     :type N_q: Integer>=1
+    
+    TODO: Change `weight_dict` to `weights`, exchange labels and dims, exchange N_q and dims
     '''
+    if Dict.valid(mis):
+        if labels is None or weight_dict is None:
+            temp = list(mis.keys())
+            if (List|Tuple).valid(temp[0]):
+                if not (labels is None and weight_dict is None):
+                    raise ValueError('mis cannot be dictionary with tuple entries if both labels and weight_dict are specified separately')
+                weight_dict = {mi:mis[mi][0] for mi in mis}
+                labels=  {mi:mis[mi][1] for mi in mis}
+            else:
+                if weight_dict is None:
+                    weight_dict = mis
+                else:
+                    labels = mis
+            mis = temp
+        else:
+            raise ValueError('mis cannot be dictionary if labels are specified separately')
+    if dims is None:
+        try:
+            dims = len(mis[0])
+        except TypeError:
+            dims = sorted(list(set.union(*(set(mi.active_dims()) for mi in mis))))   
     if len(dims) > 3:
-        raise ValueError('Cannot plot more than three dimensions.')
+        raise ValueError('Cannot plot in more than three dimensions.')
     if len(dims) < 1:
         warnings.warn('Sure you don\'t want to plot anything?')
         return
@@ -44,7 +123,7 @@ def plot_indices(mis, dims, weight_dict=None, N_q=1):
             raise ValueError('Cannot create percentile-groups without weight dictionary')
         weight_function = lambda mi: 1
     colors = matplotlib.cm.rainbow(np.linspace(0, 1, N_q))  # @UndefinedVariable
-    fig = plt.figure()
+    fig = plt.figure()#Creates new figure, because adding onto old axes doesn't work if they were created without 3d
     if len(dims) == 3:
         ax = fig.gca(projection='3d')
     else:
@@ -63,38 +142,83 @@ def plot_indices(mis, dims, weight_dict=None, N_q=1):
         else:
             Y = np.array([0 for mi in plot_indices])
         if len(dims) > 2:
-            from mpl_toolkits.mplot3d import Axes3D  # @UnusedImport, @UnresolvedImport
             Z = np.array([mi[dims[2]] for mi in plot_indices])
         else:
             Z = np.array([0 for mi in plot_indices])   
         sizes_plot = np.array([sizes[mi] for mi in plot_indices])
         if weight_dict:
             if len(dims) == 3:
-                ax.scatter(X, Y, Z, s=100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)
+                ax.scatter(X, Y, Z, s = 100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)            
             else:
-                ax.scatter(X, Y, s=100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)
+                ax.scatter(X, Y, s = 100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)
         else:
             if len(dims) == 3:
                 ax.scatter(X, Y, Z)
             else:
                 ax.scatter(X, Y)
-        max_range = np.array([X.max() - X.min(), Y.max() - Y.min(), Z.max() - Z.min()]).max()
-        Xb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][0].flatten() + 0.5 * (X.max() + X.min())
-        Yb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][1].flatten() + 0.5 * (Y.max() + Y.min())
-        Zb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][2].flatten() + 0.5 * (Z.max() + Z.min())
-        if len(dims) == 3:
-            for xb, yb, zb in zip(Xb, Yb, Zb):
-                ax.plot([xb], [yb], [zb], 'w')
-        else:
-            for xb, yb in zip(Xb, Yb):
-                ax.plot([xb], [yb], 'w')
+        try:
+            max_range = np.array([X.max() - X.min(), Y.max() - Y.min(), Z.max() - Z.min()]).max()
+            Xb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][0].flatten() + 0.5 * (X.max() + X.min())
+            Yb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][1].flatten() + 0.5 * (Y.max() + Y.min())
+            Zb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][2].flatten() + 0.5 * (Z.max() + Z.min())
+            if len(dims) == 3:
+                for xb, yb, zb in zip(Xb, Yb, Zb):
+                    ax.plot([xb], [yb], [zb], 'w')
+            else:
+                for xb, yb in zip(Xb, Yb):
+                    ax.plot([xb], [yb], 'w')
+        except ValueError:
+            pass
         ax.set_xlabel('Dim. ' + str(dims[0]))
         if len(dims) > 1:
             ax.set_ylabel('Dim. ' + str(dims[1]))
         if len(dims) > 2:
             ax.set_zlabel('Dim. ' + str(dims[2]))
         plt.grid()
-
+    if labels:
+        for mi in labels:
+            ax.annotate('{:.3g}'.format(labels[mi]),xy=(mi[0],mi[1]))
+    if weight_dict:
+        ax.legend([patches.Patch(color=color) for color in np.flipud(colors)],
+                    ['{:.0f} -- {:.0f} percentile'.format(100*(N_q-1-i)/N_q,100*(N_q-i)/N_q) for i in reversed(range(N_q))])
+    
+def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None):
+    '''
+    Plot polynomial approximation.
+    
+    :param vectorized: `f` can handle an array of inputs
+    '''
+    d = 1 if ylim is None else 2
+    show = False
+    if ax is None:
+        fig = plt.figure()
+        show = True
+        ax = fig.gca() if d==1 else fig.gca(projection='3d')
+    if d == 1:
+        if N is None:
+            N = 200
+        L = xlim[1] - xlim[0]
+        X = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N)
+        X = X.reshape((-1, 1))
+        if vectorized:
+            Z = f(X)
+        else:
+            Z = np.array([f(x) for x in X])
+        ax.plot(X, Z)
+    elif d == 2:
+        if N is None:
+            N = 30
+        T = np.zeros((N, 2))
+        L = xlim[1] - xlim[0]
+        T[:, 0] = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N) 
+        L = ylim[1] - ylim[0]
+        T[:, 1] = np.linspace(ylim[0] + L / N, ylim[1] - L / N, N) 
+        X, Y = meshgrid(T[:, 0], T[:, 1])
+        Z = grid_evaluation(X, Y, f,vectorized=vectorized)
+        ax.plot_surface(X, Y, Z)
+    if show:
+        plt.show()
+    
 def plot3D(X, Y, Z):
     '''
     Surface plot.
@@ -108,7 +232,6 @@ def plot3D(X, Y, Z):
     :param Y: 2D-Array of y-coordinates
     :param Z: 2D-Array of z-coordinates
     '''
-    from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport
     fig = plt.figure()
     ax = Axes3D(fig)
     light = LightSource(90, 90)
@@ -167,6 +290,7 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     :return: fitted convergence order
     '''
     name = name or ''
+    self_reference = (isinstance(reference,str) and reference=='self') #reference == 'self' complains when reference is a numpy array
     color = next(plt.gca()._get_lines.prop_cycler)['color']
     plt.gca().tick_params(labeltop=False, labelright=True, right=True, which='both')
     plt.gca().yaxis.grid(which="minor", linestyle='-', alpha=0.5)
@@ -181,7 +305,7 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     values = values[sorting]
     if plot_rate == True:
         plot_rate = 'fit'
-    if reference is 'self':
+    if self_reference:
         if len(times) <= 2:
             raise ValueError('Too few data points')
         limit = values[-1]
@@ -198,9 +322,12 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
             residuals[L] = np.power(np.sum(np.power(np.abs(values[L] - limit), p) / N), 1. / p)  #
         else:
             residuals[L] = np.amax(np.abs(values[L] - limit))
-    remove = np.isnan(times) | np.isinf(times) | np.isnan(residuals) | np.isinf(residuals) | (residuals == 0) | ((times == 0) & (convergence_type == 'algebraic'))
+    try:
+        remove = np.isnan(times) | np.isinf(times) | np.isnan(residuals) | np.isinf(residuals) | (residuals == 0) | ((times == 0) & (convergence_type == 'algebraic'))
+    except TypeError:
+        print(times,residuals)
     times = times[~remove]
-    if sum(~remove) < 2:
+    if sum(~remove) < (2 if self_reference else 1):
         raise ValueError('Too few valid data points')
     residuals = residuals[~remove]
     if convergence_type == 'algebraic':
@@ -209,7 +336,7 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     else:
         x = times
         limit_x = limit_time
-    min_x = min(x)
+    #min_x = min(x)
     max_x = max(x)
     y = np.log(residuals)
     try:
@@ -218,7 +345,7 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
         warnings.warn(str(e))
         plot_rate = False
         rate = None
-    if reference == 'self':
+    if self_reference:
         if rate >= 0:
             warnings.warn('No sign of convergence')
         else:
@@ -332,6 +459,7 @@ def _fit_rate(x, y, stagnation, preasymptotics, reference_x, have_rate):
     
 def _real_rate(observed_rate, l_bound, r_bound, reference_x):
     real_rate = None
+    attempts = 10
     if observed_rate < -1e-12:
         def toy_residual(x, real_rate):  # -inf when x is too close to reference_x
             with np.errstate(divide='ignore'):
@@ -339,7 +467,7 @@ def _real_rate(observed_rate, l_bound, r_bound, reference_x):
         def observed_rate_fn(real_rate):
             observed_rate = (toy_residual(r_bound, real_rate) - toy_residual(l_bound, real_rate)) / (r_bound - l_bound)
             return observed_rate
-        while True:
+        for _ in range(attempts):
             try:
                 real_rate = scipy.optimize.bisect(lambda real_rate: observed_rate_fn(real_rate) - observed_rate, observed_rate, -1e-12, rtol=0.01)
                 break
