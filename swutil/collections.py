@@ -138,7 +138,8 @@ class OrderedSet(coll.MutableSet):
     
 class DefaultDict(dict):
     '''
-    Dictionary that returns default value on unknown keys
+    Dictionary that returns default value on unknown keys, where the default 
+    value depends on the key
     '''
     def __init__(self, default):
         '''
@@ -146,11 +147,8 @@ class DefaultDict(dict):
         :type default: Function
         '''
         self.default = default
-        dict.__init__(self)
-
-    def __getitem__(self, key):
-        try:
-            return dict.__getitem__(self, key)
-        except KeyError:
-            result = self[key] = self.default(key)
-            return result
+        super().__init__()
+    
+    def __missing__(self,key):
+        result = self[key] = self.default(key)
+        return result

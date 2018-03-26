@@ -33,7 +33,11 @@ class Log(object):
         self.write_filter=write_filter
         self.entries=[]
         self.lock=lock
-        
+       
+    def __call__(self,*messages,group = None,tags = None):
+        if len(messages)==1:
+            messages = messages[0]
+        self.log(message=messages,group=group,tags=tags) 
     def log(self,message=None,group=None,tags=None):
         if self.lock:
             self.lock.acquire()
@@ -120,8 +124,8 @@ class Entry(object):
         self.time=datetime.datetime.now()
         
     def __str__(self):
-        string='<'+str(self.time)
+        string='<'+self.time.strftime("%y-%m-%d %H:%M:%S")
         if self.group:
             string+= ' | '+ self.group
-        string+='> '+self.message
+        string+='> '+str(self.message)
         return string

@@ -4,8 +4,11 @@ from math import floor
 
 def is_1d(array):
     return np.squeeze(array).ndim == 1
-
-def grid_evaluation(X, Y, f):
+def unitv(ind,size):
+    x=np.zeros(size)
+    x[ind] = 1
+    return x
+def grid_evaluation(X, Y, f,vectorized=True):
     '''
     Evaluate function on given grid and return values in grid format
     
@@ -17,10 +20,15 @@ def grid_evaluation(X, Y, f):
     :param X: 2-dimensional array of x-coordinates
     :param Y: 2-dimensional array of y-coordinates
     :param f: function to be evaluated on grid
+    :param vectorized: `f` can handle arrays of inputs
     :return: 2-dimensional array of values of f
     '''
     XX = np.reshape(np.concatenate([X[..., None], Y[..., None]], axis=2), (X.size, 2), order='C')
-    return np.reshape(f(XX), X.shape, order='C')  
+    if vectorized:
+        ZZ = f(XX)
+    else:
+        ZZ = np.array([f(x) for x in XX])
+    return np.reshape(ZZ, X.shape, order='C')  
  
 def precision_round(x, precision=0):
     return round(x, precision - int(floor(np.log10(abs(x))))) 
