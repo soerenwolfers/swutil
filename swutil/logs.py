@@ -1,20 +1,5 @@
-from _io import BytesIO
-import sys
 import datetime
-
-class Capturing(list):
-    '''
-    From http://stackoverflow.com/questions/16571150/how-to-capture-stdout-output-from-a-python-function-call
-    '''
-    def __enter__(self):
-        self._stdout,self._stderr = sys.stdout,sys.stderr
-        sys.stdout, sys.stderr = self._stdio,self._errio = BytesIO(),BytesIO()
-        return self
-    def __exit__(self, *args):
-        self.extend([self._stdio.getvalue(),self._errio.getvalue()])
-        del self._stdio,self._errio    # free up some memory
-        sys.stdout,sys.stderr = self._stdout,self._stderr
-        
+from swutil.aux import no_context
         
 class Log(object):   
     def __init__(self,print_filter=True,write_filter=False,file_name=None,lock=None):
@@ -39,17 +24,16 @@ class Log(object):
             messages = messages[0]
         self.log(message=messages,group=group,tags=tags) 
     def log(self,message=None,group=None,tags=None):
-        if self.lock:
-            self.lock.acquire()
-        entry=Entry(group=group,message=message,tags=tags)
-        self.entries.append(entry)
-        if self.print_filter(entry):
-            print(entry)
-        if self.write_filter(entry):
-            with open(self.file_name,'a') as fp:
-                fp.write(str(entry)+'\n')
-        if self.lock:
-            self.lock.release()
+        def foo():
+            entry=Entry(group=group,message=message,tags=tags)
+            self.entries.append(entry)
+            if self.print_filter(entry):
+                print(entry)
+            if self.write_filter(entry):
+                with open(self.file_name,'a') as fp:
+                    fp.write(str(entry)+'\n')
+        with self.lock if (self.lock is not None) else no_context():
+            foo()
     
     def print_log(self,print_filter=None):
         print(self.__str__(print_filter))
@@ -59,7 +43,6 @@ class Log(object):
         return '\n'.join([str(entry) for entry in self.entries if print_filter(entry)])
 
         
-#@staticmethod            
 def filter_generator(require_group=None,require_tags=None,require_message=None,exclude_group=None,exclude_tags=None,exclude_message=None):
     def filter(entry):  # @ReservedAssignment
         if require_group is None:

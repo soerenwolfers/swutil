@@ -1,6 +1,4 @@
 import timeit
-from matplotlib import pyplot
-from swutil.plots import plot_convergence
 
 def snooze(value):
     '''
@@ -14,10 +12,10 @@ def snooze(value):
     return 0
 
 class Timer():
-    def __enter__(self,name=''):
+    def __enter__(self,name = None):
         self.name = name
         self.start_time = timeit.default_timer()
     def __exit__(self,*args):
         elapsed = timeit.default_timer()-self.start_time
-        print('Elapsed time ({}): {.3f}s'.format(self.name,elapsed))
+        print('Elapsed time '+('({})'.format(self.name) if self.name else '')+': {:.3f}s'.format(elapsed))
 

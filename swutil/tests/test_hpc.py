@@ -1,6 +1,6 @@
 import numpy
 import unittest
-from swutil.multiprocessing import EasyHPC, wrap_mpi
+from swutil.hpc import EasyHPC, wrap_mpi
 from swutil.decorators import print_runtime
 #@MPIMC()
 def rand(M):

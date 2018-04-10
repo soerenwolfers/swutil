@@ -1,6 +1,5 @@
 import dill
 import numpy
-from swutil.aux import split_list, random_string, chain, cmd_exists
 import math
 import itertools
 import os
@@ -10,13 +9,23 @@ import sys
 import subprocess
 import pathos
 import argparse
+import multiprocessing
 
+from swutil.aux import split_list, random_string, chain, cmd_exists
 from swutil.validation import In, Bool, Function, validate_args, Passed, NotPassed
 #TODO: Add optional logging
+
+class Locker(object):
+    def __init__(self):
+        self.mgr = multiprocessing.Manager()
+    def get_lock(self):
+        return self.mgr.Lock()
+
 def wrap_mpi(f):
     info = argparse.Namespace()
     info.wrap_MPI = True
     return MultiProcessorWrapper(f, _MPI_processor, _MPI_finalizer, info)   
+
 @validate_args(warnings=False)
 class EasyHPC(object):#DecoratorFactory
     def __init__(self,
@@ -57,6 +66,15 @@ class MultiProcessorWrapper(object):
         self.processor = processor
         self.finalizer = finalizer
         self.info = info
+        self.pool = None
+    def fix_pool(self):
+        N = pathos.multiprocessing.cpu_count()
+        p = pathos.multiprocessing.Pool(N)
+        self.pool = p
+    def end_pool(self):
+        self.pool.close()
+        self.pool.join()
+        self.pool = None
     def __call__(self, *args, **kwargs):  
         if '__second_call' in kwargs:
             kwargs.pop('__second_call')
@@ -70,13 +88,13 @@ class MultiProcessorWrapper(object):
                 M, args = NotPassed, NotPassed               
             f_path = inspect.getsourcefile(self.f)
             f_name = self.f.__name__
-            ID = '.easyhpc_' + f_name + '_' + str(time.time()) + '_' + random_string(8)
-            r, ID = self.processor(args, kwargs, M, self.f, f_path, f_name, ID, self.info)
+            ID = '.easyhpc_' + f_name + '_' + str(time.time()) + '_' + random_string(8)#TODO: use module tempfile
+            r, ID = self.processor(args, kwargs, M, self.f, f_path, f_name, ID, self.info,self.pool)
             out = _reduce_first_output(self.info, r)
             if self.finalizer:
                 self.finalizer(ID)
             return out
-def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info):
+def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info,pool):
     from mpi4py import MPI
     if info.wrap_MPI:
         child = MPI.COMM_SELF.Spawn(
@@ -102,10 +120,17 @@ def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info):
         r = _MPI_worker(pure_python=(args, kwargs, M, f_path, f_name, info))
     return r, ID
 
-def _MP_processor(args, kwargs, M, f, f_path, f_name, ID, info):
-    N = pathos.multiprocessing.cpu_count()
-    p = pathos.multiprocessing.Pool(N)
+def _MP_processor(args, kwargs, M, f, f_path, f_name, ID, info,pool):
+    if pool is None:
+        N = pathos.multiprocessing.cpu_count()
+        p = pathos.multiprocessing.Pool(N)
+    else:
+        p=pool
+        N=pathos.multiprocessing.cpu_count()
     r = p.map(_MP_worker, [(f_path, f_name, args, kwargs, M, n, N, info) for n in range(N)])
+    if pool is None:
+        p.close()
+        p.join()
     return r, ID
 
 def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
@@ -143,7 +168,7 @@ def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
         
 def _MP_worker(arg):
     (f_filename, f_name, args, kwargs, M, rank, N, info) = arg
-    numpy.random.seed(rank)#TODO replace by randomint+rank
+    numpy.random.seed(rank)#TODO: replace by randomint+rank
     return _common_work(f_filename, f_name, M, N, rank, args, kwargs, info) 
            
 def _common_work(f_filename, f_name, M, N, rank, args, kwargs, info):

@@ -4,10 +4,36 @@ from math import floor
 
 def is_1d(array):
     return np.squeeze(array).ndim == 1
+
 def unitv(ind,size):
     x=np.zeros(size)
     x[ind] = 1
     return x
+
+def extrapolate(x, w = None, degree = None):
+    x = np.array(x)
+    if degree in (None, -1):
+        full = True
+        out = np.zeros_like(x)
+        out[0] = x[0]
+        if w is not None:
+            w = np.cumsum(w)
+        degree = len(x)-1
+    else:
+        full = False
+    for i in range(degree):
+        x = x[:-1]+2**(i+1)/(2**(i+1)-1)*(x[1:]-x[:-1])
+        if full:
+            out[i+1] = x[0]
+        elif w is not None:
+            w = w[:-1]+w[1:]
+    if not full:
+        out=x
+    if w is not None:
+        return out,w
+    else:
+        return out
+        
 def grid_evaluation(X, Y, f,vectorized=True):
     '''
     Evaluate function on given grid and return values in grid format

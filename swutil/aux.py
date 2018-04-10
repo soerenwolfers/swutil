@@ -3,6 +3,19 @@ import random
 import string
 import shutil
 
+class no_context():
+    def __enter__(self, *args):
+        pass
+    def __exit__(self, *args):
+        pass
+import inspect
+
+def isdebugging():
+    for frame in inspect.stack():
+        if frame[1].endswith('pydevd.py') or frame[1].endswith('pdb.py'):
+            return True
+    return False
+  
 def chain(*fs):
     '''
     Concatenate functions
@@ -14,11 +27,32 @@ def chain(*fs):
         return x
     return chained
 
+def string_dialog(title,label):
+    import tkinter
+    import tkinter.simpledialog
+    root = tkinter.Tk()
+    root.withdraw()
+    return tkinter.simpledialog.askstring(title, label)
+
 def cmd_exists(cmd):
     '''
     Check whether given command is available on system
     '''
     return shutil.which(cmd) is not None
+def split_integer(N,bucket = None, length = None):
+    if bucket and not length:
+        if bucket <1:
+            raise ValueError()
+        length = N//bucket + (1 if N%bucket else 0)
+    if length ==0:
+        if N ==0:
+            return []
+        else:
+            raise ValueError()
+    tmp = numpy.array([N//length]*length)
+    M = N % length
+    tmp[:M]+=1
+    return list(tmp)
 
 def split_list(l,N):
     '''
@@ -27,17 +61,10 @@ def split_list(l,N):
     npmode = isinstance(l,numpy.ndarray)
     if npmode:
         l=list(l)
-    L=int(len(l)/N)
-    s=[]
-    i=0
-    for n in range(N):
-        s.append(l[i:i+L])
-        i=i+L
-    for n in range(N):
-        s[n]+=l[i:i+1]
-        i=i+1
+    g=numpy.concatenate((numpy.array([0]),numpy.cumsum(split_integer(len(l),length=N))))
+    s=[l[g[i]:g[i+1]] for i in range(N)]
     if npmode:
-        s=numpy.array(s)
+        s=[numpy.array(sl) for sl in s]
     return s
 
 def random_string(length):

@@ -465,7 +465,7 @@ Float = _Float()
 class _Integer(Specification):
     @staticmethod
     def valid(arg):
-        return isinstance(arg, builtins.int) or arg == math.inf
+        return (isinstance(arg, builtins.int) and (arg is not False) and (arg is not True)) or arg == math.inf
     @staticmethod
     def forgive(arg, level):
         if level == 1:

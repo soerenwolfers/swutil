@@ -254,7 +254,7 @@ def plot_divergence(times, values, name=None, title=None, divergence_type='algeb
                      plot_rate, p, preasymptotics, stagnation, marker, legend)
     
 def plot_convergence(times, values, name=None, title=None, reference='self', convergence_type='algebraic', expect_residuals=None,
-                     expect_times=None, plot_rate='fit', p=2, preasymptotics=True, stagnation=False, marker=None,
+                     expect_times=None, plot_rate='fit', p=2, preasymptotics=True, stagnation=False, marker='.',
                      legend='lower left'):
     '''
     Show loglog or semilogy convergence plot.
@@ -282,11 +282,12 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     :type expect_times: List of positive numbers
     :param plot_rate: Expected convergence order
     :type plot_rate: Real or 'fit'
-    :param ignore: If reference is not provided, how many entries (counting
-       from the end) should be ignored for the computation of residuals. 
-    :type ignore: Integer.
-    :param ignore_start: How many entries counting from start should be ignored.
-    :type ignore_start: Integer.
+    :param preasymptotics: Ignore initial entries for rate fitting
+    :type preasymptotics: Boolean
+    :param stagnation: Ignore final entries from rate fitting
+    :type stagnation: Boolean
+    :param marker: Marker for data points
+    :type marker: Matplotlib marker string
     :return: fitted convergence order
     '''
     name = name or ''
@@ -443,7 +444,7 @@ class FitError(Exception):
 def _fit_rate(x, y, stagnation, preasymptotics, reference_x, have_rate):
     max_x = max(x)
     min_x = min(x)
-    min_distance = 0.2 if len(x) > 10 else (0.5 if len(x) >= 5 else 0.8)
+    min_distance = 0.5 if len(x) > 10 else (0.5 if len(x) >= 5 else 0.8)
     attempts = 10
     l_bounds = {'init':min_x}
     r_bounds = {'init':max_x, 'selfconvergence':reference_x}
@@ -453,7 +454,7 @@ def _fit_rate(x, y, stagnation, preasymptotics, reference_x, have_rate):
         if stagnation:
             r_bounds['stagnation'] = _truncate(x, y, 'right', l_bound=l_bound(), r_bound=max_x, have_rate=have_rate, prefer_length=0.5, min_distance=min_distance, max_move=1)
         if preasymptotics:
-            l_bounds['preasymptotics'] = _truncate(x, y, 'left', r_bound=r_bound(), l_bound=min_x, have_rate=have_rate, prefer_length=1, min_distance=min_distance, max_move=attempt / attempts)
+            l_bounds['preasymptotics'] = _truncate(x, y, 'left', r_bound=r_bound(), l_bound=min_x, have_rate=have_rate, prefer_length=2, min_distance=min_distance, max_move=attempt / attempts)
     observed_rate, offset = _fit(x, y, l_bound(), r_bound(), have_rate) 
     return observed_rate, offset, l_bound(), r_bound()
     
