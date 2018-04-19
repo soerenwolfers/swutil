@@ -1,6 +1,8 @@
 import numpy as np
 from swutil.validation import NDim
 from math import floor
+from scipy import ifft, fft
+from swutil.aux import split_integer
 
 def is_1d(array):
     return np.squeeze(array).ndim == 1
@@ -10,7 +12,18 @@ def unitv(ind,size):
     x[ind] = 1
     return x
 
-def extrapolate(x, w = None, degree = None):
+def one_changed(a,i,v):
+    t = np.array(a)
+    t[i] = v
+    return t
+    
+def MCSlicer(f,M,bucket = int(1e4),length = None):
+    Ms = split_integer(M,bucket = bucket,length = length)  
+    slices = [(np.mean(y,axis = 0),np.mean(y**2,axis=0)) for y in map(f,Ms)]
+    mean,sm = np.average(slices,axis=0,weights = Ms)
+    return mean,np.sqrt(sm-mean**2)/np.sqrt(M)
+
+def extrapolate(x, w = None, degree = None,base = 1):
     x = np.array(x)
     if degree in (None, -1):
         full = True
@@ -22,7 +35,7 @@ def extrapolate(x, w = None, degree = None):
     else:
         full = False
     for i in range(degree):
-        x = x[:-1]+2**(i+1)/(2**(i+1)-1)*(x[1:]-x[:-1])
+        x = x[:-1]+2**(base*(i+1))/(2**(base*(i+1))-1)*(x[1:]-x[:-1])
         if full:
             out[i+1] = x[0]
         elif w is not None:
@@ -33,7 +46,73 @@ def extrapolate(x, w = None, degree = None):
         return out,w
     else:
         return out
-        
+
+def integral(A=None,dF=None,F=None,axis = 0,trapez = False,cumulative = False):
+    '''
+    Turns an array A of length N (the function values in N points)
+    and an array dF of length N-1 (the masses of the N-1 intervals)
+    into an array of length N (the integral \int A dF at N points, with first entry 0)
+    
+    :param A: Integrand (optional, default ones, length N)
+    :param dF: Integrator (optional, default ones, length N-1)
+    :param F: Alternative to dF (optional, length N)
+    :param trapez: Use trapezoidal rule (else left point)
+    '''
+    ndim = max(v.ndim for v in (A,dF,F) if v is not None)
+    def broadcast(x):
+        new_shape = [1]*ndim
+        new_shape[axis] = -1
+        return np.reshape(x,new_shape)
+    if F is not None:
+        assert(dF is None)
+        if F.ndim<ndim:
+            F = broadcast(F)
+        N = F.shape[axis]
+        dF = F.take(indices = range(1,N),axis = axis)-F.take(indices = range(N-1),axis = axis)
+    elif dF is not None:
+        if dF.ndim<ndim:
+            dF = broadcast(dF)
+        N = dF.shape[axis]+1
+    else:
+        if A.ndim<ndim:
+            A = broadcast(A)
+        N = A.shape[axis]
+    if A is not None:
+        if trapez:
+            midA = (A.take(indices = range(1,N),axis = axis)+A.take(indices = range(N-1),axis = axis))/2
+        else:
+            midA = A.take(indices=range(N-1),axis=axis)
+        if dF is not None:
+            dY = midA*dF
+        else:
+            dY = midA
+    else:
+        dY = dF
+    pad_shape = list(dY.shape)
+    pad_shape[axis] = 1
+    pad = np.zeros(pad_shape)
+    if cumulative:
+        return np.concatenate((pad,np.cumsum(dY,axis = axis)),axis = axis)
+    else:
+        return np.sum(dY,axis = axis)
+    
+def toeplitz_multiplication(a,b,v):
+    '''
+    Multiply Toeplitz matrix with first row a and first column b with vector v
+    
+    Normal matrix multiplication would require storage and runtime O(n^2);
+    embedding into a circulant matrix and using FFT yields O(log(n)n)
+    '''
+    a = np.reshape(a,(-1))
+    b = np.reshape(b,(-1))
+    n = len(a)
+    c = np.concatenate((a[[0]],b[1:],np.zeros(1),a[-1:0:-1]))
+    p = ifft(fft(c)*fft(v.T,n=2*n)).T#fft autopads input with zeros if n is supplied
+    if np.all(np.isreal(a)) and np.all(np.isreal(b)) and np.all(np.isreal(v)):
+        return np.real(p[:n])
+    else:
+        return p[:n]
+ 
 def grid_evaluation(X, Y, f,vectorized=True):
     '''
     Evaluate function on given grid and return values in grid format

@@ -2,6 +2,8 @@ import numpy
 import random
 import string
 import shutil
+import re
+from datetime import timedelta
 
 class no_context():
     def __enter__(self, *args):
@@ -15,7 +17,7 @@ def isdebugging():
         if frame[1].endswith('pydevd.py') or frame[1].endswith('pdb.py'):
             return True
     return False
-  
+
 def chain(*fs):
     '''
     Concatenate functions
@@ -69,7 +71,42 @@ def split_list(l,N):
 
 def random_string(length):
     '''
-    Generate alphanumerical string. Hint: Check if module tempfile has what you want, especially when you are concerned about race conditions
+    Generate alphanumerical string. Hint: Check whether module tempfile has what you want, especially when you are concerned about race conditions
     '''
     return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
-        
+
+def random_word(length,dictionary = False):#may return offensive words if dictionary = True
+    '''
+    Creates random lowercase words from dictionary or by alternating vowels and consonants
+    
+    The second method chooses from 85**length words.
+    The dictionary method chooses from 3000--12000 words for 3<=length<=12
+    (though this of course depends on the available dictionary)
+    
+    :param length: word length
+    :param dictionary: Try reading from dictionary, else fall back to artificial words
+    '''
+    if dictionary:
+        try:
+            with open('/usr/share/dict/words') as fp:
+                words = [word.lower()[:-1] for word in fp.readlines() if re.match('[A-Za-z0-9]{}$'.format('{'+str(length)+'}'),word)]
+            return random.choice(words)
+        except FileNotFoundError:
+            pass
+    vowels = list('aeiou')
+    consonants = list('bcdfghklmnprstvwz')
+    pairs = [(random.choice(consonants),random.choice(vowels)) for _ in range(length//2+1)] 
+    return ''.join([l for p in pairs for l in p])[:length]
+
+def string_from_seconds(seconds):
+    td = str(timedelta(seconds = seconds))
+    parts = td.split('.')
+    if len(parts) == 1:
+        td = td+'.00'
+    elif len(parts) == 2:
+        td = '.'.join([parts[0],parts[1][:2]])
+    return td
+
+if __name__ == '__main__':
+    for _ in range(100):
+        print(random_word(length = 17,dictionary = True))

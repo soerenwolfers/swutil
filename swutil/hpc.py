@@ -36,6 +36,12 @@ class EasyHPC(object):#DecoratorFactory
                  reduce:Function=NotPassed,
                  split_job=NotPassed
                  ):
+        '''
+        :param n_tasks: How many tasks does the decorated function handle? 
+        :param n_results: If the decorated function handles many tasks at once, are the results reduced (n_results = 'one') or not (as many results as tasks)?
+        :param reducee: Function that reduces multiple outputs to a single output
+        :param splitjob: Function that converts an input to the decorated function that represents one large job to two smaller jobs
+        '''
         if backend == 'MPI': 
             self.processor = _MPI_processor
             self.finalizer = _MPI_finalizer
@@ -53,7 +59,7 @@ class EasyHPC(object):#DecoratorFactory
             if self.info.n_results == 'many':
                 raise ValueError('Do not know how to handle functions that handle implicitly many tasks and return multiple results')
             if NotPassed(self.info.split_job):
-                raise ValueError('Functions handling implicitly many tasks must specfiy how to split a job using `split_job`')
+                raise ValueError('Functions handling implicitly many tasks must specify how to split a job using `split_job`')
         if self.info.n_results == 'one':
             if NotPassed(self.info.reduce):
                 raise ValueError('Functions that return single results must specify how to reduce multiple results using `reduce`')

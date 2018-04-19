@@ -12,8 +12,9 @@ def snooze(value):
     return 0
 
 class Timer():
-    def __enter__(self,name = None):
+    def __init__(self,name = None):
         self.name = name
+    def __enter__(self,*args):
         self.start_time = timeit.default_timer()
     def __exit__(self,*args):
         elapsed = timeit.default_timer()-self.start_time

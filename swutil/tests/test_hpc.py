@@ -86,7 +86,8 @@ class TestMultiprocessing(unittest.TestCase):
         self.assertEqual(MPIsum(numpy.array([2*i for i in range(self.N)])),self.N*self.N-self.N)
     def testMPlists(self):
         self.assertEqual(MPsum(numpy.array([2*i for i in range(self.N)])),self.N*self.N-self.N)   
-              
+
+    
 if __name__ == "__main__":
     print_runtime(unittest.main)(exit=False)
     #suite=unittest.TestLoader().loadTestsFromName(name='test_multiprocessing.TestMultiprocessing.test_implicitly_many')

@@ -169,7 +169,7 @@ def print_runtime(function):
         output = function(*args,**kwargs)
         pr.disable()
         ps = pstats.Stats(pr)
-        ps.sort_stats('cumulative').print_stats(20)
+        ps.sort_stats('tot').print_stats(20)
         return output
     return wrapper
 
