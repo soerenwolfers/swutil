@@ -7,7 +7,7 @@ def modules():
     module_versions = {}
     for name in names:
         if hasattr(sys.modules[name], '__version__'):
-            module_versions[name] = sys.modules[name].__version__ + '(sys.modules)'
+            module_versions[name] = '{} (sys.modules)'.format(sys.modules[name].__version__)
     try:
         import pip
         pip_list = pip.operations.freeze.get_installed_distributions()  # @UndefinedVariable
