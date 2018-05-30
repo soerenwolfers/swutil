@@ -1,6 +1,7 @@
 '''
 Various plotting functions
 '''
+import re
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm, patches
@@ -17,27 +18,7 @@ from numpy import meshgrid
 from matplotlib.backends.backend_pdf import PdfPages
 import os
 from collections import OrderedDict
-
-def _classify(properties,into='path'):
-    '''
-    Turns keyword pairs into path
-    '''
-    subdirs = []
-    for property,value in properties.items():  # @ReservedAssignment
-        if Bool.valid(value):
-            subdirs.append(('' if value else 'not_')+'{}'.format(property))
-        elif String.valid(value):
-            subdirs.append(value)
-        elif (Float|Integer).valid(value):
-            subdirs.append('{}{}'.format(property,value))
-        else:
-            subdirs.append('{}_{}'.format(property,value))
-    path = os.path.join(*subdirs)
-    head,_ = os.path.split(path)
-    if not os.path.exists(head):
-        os.makedirs(head)
-    return path
-
+from swutil.files import path_from_keywords
 def save(*name, pdf=True, tex=False,figs = None):
     if len(name)==1:
         name = name[0]
@@ -47,7 +28,7 @@ def save(*name, pdf=True, tex=False,figs = None):
         properties=OrderedDict()
         for j in range(len(name)//2):
             properties[name[2*j]]=name[2*j+1]
-        name = _classify(properties)
+        name = path_from_keywords(properties,into='file')
     if tex:
         if figs is not None:
             raise ValueError('tex only supports saving current figure')
@@ -182,12 +163,14 @@ def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
         ax.legend([patches.Patch(color=color) for color in np.flipud(colors)],
                     ['{:.0f} -- {:.0f} percentile'.format(100*(N_q-1-i)/N_q,100*(N_q-i)/N_q) for i in reversed(range(N_q))])
     
-def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None):
+def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None):
     '''
     Plot polynomial approximation.
     
     :param vectorized: `f` can handle an array of inputs
     '''
+    kwargs = kwargs or {}
+    args = args or []
     d = 1 if ylim is None else 2
     show = False
     if ax is None:
@@ -204,7 +187,7 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None):
             Z = f(X)
         else:
             Z = np.array([f(x) for x in X])
-        ax.plot(X, Z)
+        ax.plot(X, Z,*args,**kwargs)
     elif d == 2:
         if N is None:
             N = 30
@@ -215,9 +198,13 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None):
         T[:, 1] = np.linspace(ylim[0] + L / N, ylim[1] - L / N, N) 
         X, Y = meshgrid(T[:, 0], T[:, 1])
         Z = grid_evaluation(X, Y, f,vectorized=vectorized)
-        ax.plot_surface(X, Y, Z)
+        if contour:
+            ax.contour(X,Y,Z)
+        else:
+            ax.plot_surface(X, Y, Z)
     if show:
         plt.show()
+    return ax,X,Z
     
 def plot3D(X, Y, Z):
     '''
@@ -254,8 +241,8 @@ def plot_divergence(times, values, name=None, title=None, divergence_type='algeb
                      plot_rate, p, preasymptotics, stagnation, marker, legend)
     
 def plot_convergence(times, values, name=None, title=None, reference='self', convergence_type='algebraic', expect_residuals=None,
-                     expect_times=None, plot_rate='fit', p=2, preasymptotics=True, stagnation=False, marker='.',
-                     legend='lower left'):
+                     expect_times=None, plot_rate='fit', base = np.exp(0),xlabel = 'x', p=2, preasymptotics=True, stagnation=False, marker='.',
+                     legend='lower left',relative = False):
     '''
     Show loglog or semilogy convergence plot.
     
@@ -306,6 +293,8 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     values = values[sorting]
     if plot_rate == True:
         plot_rate = 'fit'
+    if plot_rate !='fit':
+        plot_rate = plot_rate*np.log(base)#Convert to a rate w.r.t. exp
     if self_reference:
         if len(times) <= 2:
             raise ValueError('Too few data points')
@@ -323,6 +312,11 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
             residuals[L] = np.power(np.sum(np.power(np.abs(values[L] - limit), p) / N), 1. / p)  #
         else:
             residuals[L] = np.amax(np.abs(values[L] - limit))
+    if relative:
+        if p<np.Inf:
+            residuals /= np.power(np.sum(np.power(np.abs(limit),p)/N),1./p)
+        else:
+            residuals /= np.amax(np.abs(limit))
     try:
         remove = np.isnan(times) | np.isinf(times) | np.isnan(residuals) | np.isinf(residuals) | (residuals == 0) | ((times == 0) & (convergence_type == 'algebraic'))
     except TypeError:
@@ -356,7 +350,17 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
                               + (' Estimated true rate: {}.'.format(real_rate) if real_rate else '')
                               + (' Fitted rate: {}.'.format(rate) if rate else ''))      
     if plot_rate:
-        name += '(Fitted rate: {:.2g})'.format(rate)  #
+        name += 'Fitted rate' if plot_rate == 'fit' else 'Plotted rate:'
+        if convergence_type == 'algebraic':
+            name+='{:.2g})'.format(rate) 
+        else:
+            base_rate = rate/np.log(base)
+            base_rate_str = f'{base_rate:.2g}'
+            if base_rate_str=='-1':
+                base_rate_str='-'
+            if base_rate_str =='1':
+                base_rate_str = ''
+            name+=f'${base}^{{{base_rate_str}{xlabel}}}$'
         if convergence_type == 'algebraic':
             X = np.linspace(np.exp(min_x_fit), np.exp(max_x_fit), c_ticks)
             plt.loglog(X, np.exp(offset) * X ** rate, '--', color=color)

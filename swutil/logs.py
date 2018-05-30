@@ -23,7 +23,7 @@ class Log(object):
         if len(messages)==1:
             messages = messages[0]
         self.log(message=messages,group=group,tags=tags) 
-    def log(self,message=None,group=None,tags=None):
+    def log(self,message=None,group=None,tags=None,use_lock=True):
         def foo():
             entry=Entry(group=group,message=message,tags=tags)
             self.entries.append(entry)
@@ -32,7 +32,7 @@ class Log(object):
             if self.write_filter(entry):
                 with open(self.file_name,'a') as fp:
                     fp.write(str(entry)+'\n')
-        with self.lock if (self.lock is not None) else no_context():
+        with self.lock if (self.lock is not None and use_lock) else no_context():
             foo()
     
     def print_log(self,print_filter=None):

@@ -3,6 +3,8 @@ import random
 import string
 import shutil
 import re
+import keyword
+import readline
 from datetime import timedelta
 
 class no_context():
@@ -99,6 +101,12 @@ def random_word(length,dictionary = False):#may return offensive words if dictio
     return ''.join([l for p in pairs for l in p])[:length]
 
 def string_from_seconds(seconds):
+    '''
+    Converts seconds into elapsed time string of form 
+    
+    (X days(s)?,)? HH:MM:SS.YY
+    
+    '''
     td = str(timedelta(seconds = seconds))
     parts = td.split('.')
     if len(parts) == 1:
@@ -106,6 +114,29 @@ def string_from_seconds(seconds):
     elif len(parts) == 2:
         td = '.'.join([parts[0],parts[1][:2]])
     return td
+def input_with_prefill(prompt, text):
+    '''
+    https://stackoverflow.com/questions/8505163/is-it-possible-to-prefill-a-input-in-python-3s-command-line-interface
+    '''
+    def hook():
+        readline.insert_text(text)
+        readline.redisplay()
+    try:
+        readline.set_pre_input_hook(hook)
+    except Exception:
+        pass
+    result = input(prompt)
+    try:
+        readline.set_pre_input_hook()
+    except Exception:
+        pass
+    return result
+
+def is_identifier(s):
+    '''
+    Check if string is valid variable name
+    '''
+    return s.isidentifier() and not keyword.iskeyword(s)
 
 if __name__ == '__main__':
     for _ in range(100):

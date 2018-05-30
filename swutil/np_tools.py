@@ -175,3 +175,33 @@ def weighted_median(values, weights):
         i += 1
         below_weight += weights[i]
     return values[i]
+
+
+from numpy import log1p, exp
+
+def log1pexp(x,derivative=0):
+    if derivative ==1:
+        return 1/(1+np.exp(-x))
+    elif derivative ==2:
+        return 1/(np.exp(x/2)+np.exp(-x/2))**2
+    else:
+        a=x.copy()
+        a[x<50]=log1p(exp(x[x<50]))
+        return a
+
+def softplus(x,derivative = 0):
+    if derivative ==0:
+        a=x.copy()
+        b=x[x<0]
+        c=x[x>=0]
+        a[x<0] = -1/b/(1+np.sqrt(1+1/b**2))
+        a[x>=0] = np.sqrt(c**2+1)+c
+    elif derivative == 1:
+        a = x.copy()
+        b=x[x<0]
+        c=x[x>=0]
+        a[x<0] = 1/(b**2*(1+np.sqrt(1+1/b**2))+1)
+        a[x>=0] = c/np.sqrt(c**2+1)+1
+    elif derivative ==2:
+        a= 1/np.power(x**2+1,3/2)
+    return a

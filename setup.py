@@ -9,5 +9,5 @@ setup(name='swutil',
       author_email='soeren.wolfers@gmail.com',
       url = 'https://bitbucket.org/soerenwolfers/swutil',
       packages=find_packages(exclude=['*tests']),#,'examples*']),
-      install_requires=['numpy','matplotlib','matplotlib2tikz','memory_profiler','pathos','dill']
+      install_requires=['numpy','matplotlib','matplotlib2tikz','memory_profiler','pathos','dill','PyPDF2']
 )

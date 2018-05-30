@@ -4,8 +4,9 @@ from swutil.time import Timer
 import scipy.special
 import scipy.linalg
 from swutil.plots import plot_convergence
+from matplotlib import pyplot
 
-def logGBM(times,r,sigma,S0,d,M):
+def logGBM(times,r,sigma,S0,d,M,dW=None):
     '''
     Returns M Euler-Maruyama sample paths of log(S), where 
         dS = r*S*dt+sigma*S*dW
@@ -15,13 +16,16 @@ def logGBM(times,r,sigma,S0,d,M):
     :rtype: M x N array
     '''
     N=len(times)
+    times = times.flatten()
     p0 = np.log(S0)#/(K*c/np.linalg.norm(c)**2)), (1, d))
-    return p0 + (r-sigma**2/2)*np.tile(times,(1,d))+np.concatenate((np.zeros((M,1,d)),np.cumsum(np.sqrt(sigma**2*(times[1:]-times[:-1]))*np.random.normal(size=(M,N-1,d)),axis=1)),axis=1)
+    if dW is None:
+        dW=np.sqrt(times[1:]-times[:-1])[None,:,None]*np.random.normal(size=(M,N-1,d))
+    return p0 + ((r-sigma**2/2)*times)[None,:,None]+integral(dF=sigma*dW,axis=1,cumulative = True)
 
 def fBrown(H,T,N,M,dW = None,cholesky = False):
     '''
     Sample fractional Brownian motion with differentiability index H 
-    on interval [0,T] (H=1/2 corresponds to standard Brownian motion)
+    on interval [0,T] (H=1/2 yields standard Brownian motion)
     
     :param H: Differentiability, larger than 0
     :param T: Final time
@@ -58,7 +62,7 @@ def fBrown(H,T,N,M,dW = None,cholesky = False):
     out = np.concatenate((np.zeros((1,M)),out))
     return out
 
-def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False):
+def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
     times = np.linspace(0, T, N)
     dt = T/(N-1)
     times = np.reshape(times,(-1,1))
@@ -70,7 +74,59 @@ def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False):
     Y = eta*np.sqrt(2*H)*fBrown(H,T,N,M,dW =dW,cholesky = cholesky)
     v = xi*np.exp(Y-0.5*(eta**2)*times**(2*H))
     S = S0*np.exp(integral(np.sqrt(v),dF = dZ,axis=0,cumulative = True)+integral(r - 0.5*v,F = times,axis=0,trapez=False,cumulative = True))
-    return S
+    if return_v:
+        return np.array([S,v])
+    else:
+        return np.array([S])
+    
+def rThreeHalves(H,T,eta,xi,rho,alpha,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
+    times = np.linspace(0, T, N)
+    dt = T/(N-1)
+    times = np.reshape(times,(-1,1))
+    if dW is None:
+        dW = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+    if dW_orth is None:
+        dW_orth = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+    dZ = rho*dW+np.sqrt(1-rho**2)*dW_orth
+    Y = eta*np.sqrt(2*H)*fBrown(H,T,N,M,dW =dW,cholesky = cholesky)
+    v = _v_rThreeHalves_direct(Y,times,alpha,xi,xi,eta,H)
+    S = S0*np.exp(integral(np.sqrt(v),dF = dZ,axis=0,cumulative = True)+integral(r - 0.5*v,F = times,axis=0,trapez=False,cumulative = True))
+    print(np.mean(S[-1]),np.std(S[-1]))
+    if return_v:
+        return np.array([S,v])
+    else:
+        return np.array([S])
+    
+def _v_rThreeHalves(Y,times,alpha,vstar,xi,eta,H):
+    v = 1/xi*np.ones_like(Y)
+    for i in range(1,len(times)):
+        dt = times[i]-times[i-1]
+        dY=Y[i]-Y[i-1]
+        b_geom = 1/np.sqrt(v[i-1])
+        #vtilde = v[i-1]*np.exp(b_geom*dY-0.5*(eta**2*b_geom**2)*dt**(2*H))
+        vtilde = v[i-1]+np.sqrt(v[i-1])*dY
+        v[i] = 1/vstar+(vtilde-1/vstar)*np.exp(-alpha*dt)
+        v[i] = np.abs(v[i])
+    pyplot.plot(1/v[:,0])
+    pyplot.show()
+    print(np.mean(1/v))
+    return 1/v
+
+def _v_rThreeHalves_direct(Y,times,alpha,vstar,xi,eta,H):
+    v = xi*np.ones_like(Y)
+    for i in range(1,len(times)):
+        dt = times[i]-times[i-1]
+        dY=Y[i]-Y[i-1]
+        a_geom = -alpha*(v[i-1]-vstar)
+        b_geom = np.sqrt(v[i-1])
+        #vtilde = v[i-1]*np.exp(a_geom*dt)*np.exp(b_geom*dY-0.5*(eta**2*b_geom**2)*dt**(2*H))
+        vtilde = v[i-1]+a_geom*v[i-1]+b_geom*v[i-1]*dY
+        v[i] = np.abs(vtilde)
+    pyplot.plot(v[:,0])
+    pyplot.show()
+    print(np.mean(v))
+    return v
+    
     
 if __name__=='__main__':
     L = 8

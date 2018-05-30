@@ -263,9 +263,9 @@ class _ValidatedInputFunction():
         self.defaults = builtins.dict()
         for name,param in self.f_parameters:
             if name in self.has_Specification:
-                if param.kind == 4:
+                if param.kind == 4:#kwargs
                     self.spec_dict[name] = Dict(key_spec=String, value_spec=param.annotation)
-                elif param.kind == 2:
+                elif param.kind == 2:#args
                     self.spec_dict[name] = Iterable(value_spec=param.annotation)
                 else:
                     self.spec_dict[name] = param.annotation        
