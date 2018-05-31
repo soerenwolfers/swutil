@@ -1,4 +1,5 @@
 *-blx.bib
+.vscode
 *.easyhpc*
 *.MPIMC*
 experiments/
