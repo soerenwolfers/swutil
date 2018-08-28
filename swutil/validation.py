@@ -10,7 +10,6 @@ import inspect
 import functools
 from inspect import signature
 from abc import ABC, abstractmethod
-from swutil.errors import ValidationError
 import numpy
 import timeit
 import warnings
@@ -18,6 +17,9 @@ import math
 
 # Don't use brackets for subspecifications because of lack of support for keyword arguments
 # _validate has to raise error instead of returning None
+
+class ValidationError(Exception):
+    pass
 
 class _NotPassed():
     '''
@@ -89,7 +91,7 @@ class Specification(ABC):
         if self.valid(arg):
             return arg
         else:
-            raise ValidationError()
+            raise ValidationError
     @abstractmethod
     def valid(self, arg):
         pass
@@ -582,7 +584,7 @@ class _Function(Specification):
             else:
                 return arg
         else:
-            raise ValidationError()
+            raise ValidationError
     def __str__(self):
         return 'Function{}'.format('({})'.format(self.value_spec) if self.value_spec else '')
 Function = _Function()
@@ -871,7 +873,7 @@ class _Iterable(Specification):
             else:
                 return arg
         else:
-            raise ValidationError()
+            raise ValidationError
     def __str__(self):
         return 'Iterable{}'.format('({})'.format(self.value_spec) if self.value_spec else '')
 Iterable = _Iterable()     
@@ -1097,6 +1099,3 @@ _implies.__str__ = ' > '
 _or.__str__ = ' | '
 _xor.__str__ = ' ^ '
 _equal.__str__ = ' == '
-
-    
-    

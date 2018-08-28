@@ -2,6 +2,7 @@ import os
 import fnmatch
 import re
 from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer
+import os, sys, subprocess
 def path_from_keywords(keywords,into='path'):
     '''
     turns keyword pairs into path or filename 
@@ -95,8 +96,8 @@ def zip_dir(zip_name, source_dir,rename_source_dir=False):
     with ZipFile(zip_name, 'w', ZIP_DEFLATED) as zf:
         for file in src_path.rglob('*'):
             path_in_zip = str(file.relative_to(src_path.parent))
-            if rename_source_dir:
-                first,tail = path_in_zip.split(os.sep,1)
+            if rename_source_dir != False:
+                _,tail = path_in_zip.split(os.sep,1)
                 path_in_zip=os.sep.join([rename_source_dir,tail])
             zf.write(str(file.resolve()), path_in_zip)
 
@@ -107,7 +108,14 @@ def delete_empty_files(fpaths):
                 os.remove(fpath)
         except Exception:
             pass
-        
+
+def start_file(filename):
+    if sys.platform == "win32":
+        os.startfile(filename)
+    else:
+        opener ="open" if sys.platform == "darwin" else "xdg-open"
+        subprocess.call([opener, filename])
+
 def delete_empty_directories(dirs):
     for d in dirs:
         try:

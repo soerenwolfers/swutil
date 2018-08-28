@@ -9,18 +9,62 @@ from matplotlib import pyplot
 def logGBM(times,r,sigma,S0,d,M,dW=None):
     '''
     Returns M Euler-Maruyama sample paths of log(S), where 
-        dS = r*S*dt+sigma*S*dW
+        dS = S*r*dt+S*sigma*dW
         S(0)=S0
     using N time steps
     
-    :rtype: M x N array
+    :rtype: M x N x d array
     '''
     N=len(times)
     times = times.flatten()
-    p0 = np.log(S0)#/(K*c/np.linalg.norm(c)**2)), (1, d))
+    p0 = np.log(S0)
     if dW is None:
         dW=np.sqrt(times[1:]-times[:-1])[None,:,None]*np.random.normal(size=(M,N-1,d))
-    return p0 + ((r-sigma**2/2)*times)[None,:,None]+integral(dF=sigma*dW,axis=1,cumulative = True)
+    if np.squeeze(sigma).ndim<=1:
+        dF = sigma*dW
+        ito_correction = np.squeeze(sigma**2/2)
+        #print(ito_correction,'asdf')
+    else:
+        dF = np.einsum('ij,...j',sigma,dW)
+        ito_correction = np.sum(sigma**2,1)/2
+        #print(ito_correction)
+    drift  = (r-ito_correction)*times[None,:,None]
+    diffusion = integral(dF=dF,axis=1,cumulative = True)
+    return p0 + drift + diffusion
+
+def logHeston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
+    '''
+    :rtype: M x N x d array
+    '''
+    d_nu = 1 if nu_1d else d
+    nu = np.zeros((M,len(times),d_nu))
+    S = np.zeros((M,len(times),d))
+    nu[:,0,:] = nu0
+    S[:,0,:] = S0
+    if 2*kappa*theta<=xi**2:
+        raise ValueError('Feller condition not satisfied')
+    test = np.std(np.diff(times.flatten())) 
+    if test>1e-12:
+        raise ValueError
+    dt = times[1]-times[0]
+    N = len(times)
+    if d == 1:
+        if np.array(rho).size ==1:
+            rho = np.array([[1,rho],[rho,1]])
+    chol = np.linalg.cholesky(rho)
+    #print(chol)
+    dW = np.sqrt(dt)*np.einsum('ij,...j',chol,np.random.normal(size=(M,N-1,d+d_nu)))
+    for i in range(1,N):
+        dt = times[i]-times[i-1]
+        nu[:,i,:] = np.abs(nu[:,i-1,:] + kappa*(theta-nu[:,i-1,:])*dt+xi*np.sqrt(nu[:,i-1,:])*dW[:,i-1,d:])
+        #b_geom = xi/np.sqrt(nu[:,i-1,:])
+        #temp = nu[:,i-1,:]*np.exp((-0.5*b_geom**2)*dt+b_geom*dW[:,i-1,d:])
+        #nu[:,i,:] = theta + np.exp(-kappa*dt)*(temp-theta)
+    S = S0*np.exp(integral(np.sqrt(nu),dF = dW[:,:,:d],axis=1,cumulative = True)+integral(mu - 0.5*nu,F = times,axis=1,trapez=False,cumulative = True))
+    #i=16
+    #print(np.mean(nu[:,i,0],axis=0),np.std(nu[:,i,0],axis=0),np.percentile(S[:,i,0],axis=0,q=5))
+    return np.log(np.concatenate((S,nu),axis=-1))
+
 
 def fBrown(H,T,N,M,dW = None,cholesky = False):
     '''
@@ -75,6 +119,8 @@ def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,retur
     v = xi*np.exp(Y-0.5*(eta**2)*times**(2*H))
     S = S0*np.exp(integral(np.sqrt(v),dF = dZ,axis=0,cumulative = True)+integral(r - 0.5*v,F = times,axis=0,trapez=False,cumulative = True))
     if return_v:
+        #i=4
+        #print(np.percentile(v[:,i],axis=0,q=5),np.percentile(v[:,i],axis=0,q=95),np.percentile(S[:,i],axis=0,q=5),np.percentile(S[:,i],axis=0,q=95))
         return np.array([S,v])
     else:
         return np.array([S])

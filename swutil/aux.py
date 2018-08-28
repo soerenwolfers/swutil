@@ -7,12 +7,106 @@ import keyword
 import readline
 from datetime import timedelta
 
-class no_context():
+class no_context:
     def __enter__(self, *args):
         pass
     def __exit__(self, *args):
         pass
+
+from swutil.validation import String, Integer
+import numpy as np
+import ast
+
+def smart_range(*args):
+    '''
+    smart_range(1,3,9)==[1,3,5,7,9]
+    '''
+    if len(args)==1:#String
+        string_input = True
+        string = args[0].replace(' ','')
+        original_args=string.split(',')
+        args = []
+        for arg in original_args:
+            try:
+                args.append(ast.literal_eval(arg))
+            except (ValueError,SyntaxError):
+                try:# Maybe an arithmetic expression?
+                    args.append(eval(arg,{'__builtins__':{}}))
+                except (NameError,SyntaxError):#Input was actually meant to be a string, e.g. smart_range('a,...,z'), or input was interval type, e.g. smart_range('[1,3]/10')
+                    args.append(arg)
+    else:
+        string_input = False
+    arg_start = args[0]
+    if len(args)>2:
+        arg_step = args[1]
+        if len(args)>3:
+            raise ValueError('At most 3 arguments: start, step, stop')
+    else:
+        arg_step = None
+    arg_end = args[-1]
+    if String.valid(arg_start) and len(arg_start)==1:#Character
+        range_type = 'char'
+    elif all(Integer.valid(arg) for arg in args):
+        range_type = 'integer'
+    else: 
+        if string_input and original_args[0][0] in ['(','[']:
+            range_type = 'linspace'
+        else:
+            range_type = 'float'
+
+    if range_type == 'char':
+        start = ord(arg_start)
+        step = (ord(arg_step)- start) if arg_step else 1
+        end = ord(arg_end)
+        out = [chr(i) for i in range(start,end+step,step)]
+        if np.sign(step)*(ord(out[-1])-end)>0:
+            del out[-1]
+        return out
+    elif range_type == 'integer':
+        if string_input:
+            if len(args)==2 and all('**' in oa for oa in original_args):#Attempt geometric progresesion
+                bases,exponents = zip(*[oa.split('**') for oa in original_args])
+                if len(set(bases))==1:#Keep attempting geometric progression
+                    return [int(bases[0])**exponent for exponent in smart_range(','.join(exponents))]
+        start = arg_start
+        step = (arg_step - arg_start) if arg_step is not None else 1
+        end = arg_end
+        out = list(range(start,end+step,step))
+        if np.sign(step)*(out[-1]-end)>0:
+            del out[-1]
+        return out
+    elif range_type == 'float':
+        if len(args)==2 and all('**' in oa for oa in original_args):#Attempt geometric progresesion
+            bases,exponents = zip(*[oa.split('**') for oa in original_args])
+            if len(set(bases))==1:#Keep attempting geometric progression
+                return [float(bases[0])**exponent for exponent in smart_range(','.join(exponents)) ]
+        if len(args) == 2:
+            raise ValueError()
+        start = arg_start
+        step = arg_step - arg_start
+        end = arg_end
+        out = list(np.arange(start,end+1e-12*step,step))
+        return out
+    elif range_type == 'linspace':
+        lopen,start = (original_args[0][0]=='('),float(original_args[0][1:])
+        end,N = original_args[1].split('/')
+        end,ropen = float(end[:-1]),(end[-1]==')')
+        N = ast.literal_eval(N)+lopen +ropen
+        points = np.linspace(start,end,num=N)
+        return points[lopen:len(points)-ropen]
+
 import inspect
+
+def ld_to_dl(ld):
+    '''
+    Convert list of dictionaries to dictionary of lists
+    '''
+    if ld:
+        keys = list(ld[0])
+        dl = {key:[d[key] for d in ld] for key in keys}
+        return dl
+    else:
+        return {}
 
 def isdebugging():
     for frame in inspect.stack():
@@ -35,14 +129,16 @@ def string_dialog(title,label):
     import tkinter
     import tkinter.simpledialog
     root = tkinter.Tk()
-    root.withdraw()
+    root.withdraw()#Somehow this is sometimes needed to prevent errors about something in Tk not existing yet
     return tkinter.simpledialog.askstring(title, label)
-
+def raise_exception(title):
+    raise Exception(title)
 def cmd_exists(cmd):
     '''
     Check whether given command is available on system
     '''
     return shutil.which(cmd) is not None
+
 def split_integer(N,bucket = None, length = None):
     if bucket and not length:
         if bucket <1:
@@ -131,6 +227,9 @@ def input_with_prefill(prompt, text):
     except Exception:
         pass
     return result
+
+def identity(x):
+    return x
 
 def is_identifier(s):
     '''

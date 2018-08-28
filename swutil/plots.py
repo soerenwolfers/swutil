@@ -13,11 +13,13 @@ from matplotlib.pyplot import savefig
 from swutil.np_tools import weighted_median, grid_evaluation
 import scipy.optimize
 from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport. Axes3D is needed for projection = '3d' below @UnusedImport
-from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer
+from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer,Function
+from swutil.collections import unique
 from numpy import meshgrid
 from matplotlib.backends.backend_pdf import PdfPages
 import os
-from collections import OrderedDict
+
+from collections import OrderedDict, defaultdict
 from swutil.files import path_from_keywords
 def save(*name, pdf=True, tex=False,figs = None):
     if len(name)==1:
@@ -55,7 +57,7 @@ def save(*name, pdf=True, tex=False,figs = None):
                 except:
                     pass
 #@validate_args()
-def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
+def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labels=None, colors = None,axis_labels = None,size_exponent=0.1,ax=None):
     '''
     Plot multi-index set
     
@@ -63,29 +65,47 @@ def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
     :type mis: Iterable of SparseIndices
     :param dims: Which dimensions to use for plotting
     :type dims: List of integers.
-    :param weight_dict: Weights associated with each multi-index
-    :type weight_dict: Dictionary
-    :param N_q: Number of percentile-groups plotted in different colors
-    :type N_q: Integer>=1
+    :param weights: Weights associated with each multi-index
+    :type weights: Dictionary
+    :param quantiles: Number of groups plotted in different colors
+    :type quantiles: Integer>=1 or list of colors
     
-    TODO: Change `weight_dict` to `weights`, exchange labels and dims, exchange N_q and dims
+    TODO: exchange index_labels and dims, exchange quantiles and dims
     '''
+    if weights is None:
+        weights = defaultdict(lambda: 1)
+    if Function.valid(weights):
+        weights = {mi:weights(mi) for mi in mis}
+    values = list(weights.values())
+    if Integer.valid(groups):
+        N_g = groups
+        groups = [[mi for mi in mis if (weights[mi] > np.percentile(values, 100/groups*g) or g==0) and weights[mi] <= np.percentile(values, 100/groups*(g+1))] for g in range(N_g)]
+        group_names = ['{:.0f} -- {:.0f} percentile'.format(100/groups*(N_g-i-1),100/groups*(N_g-i)) for i in reversed(range(N_g))]
+    else:
+        if Function.valid(groups):
+            groups = {mi:groups(mi) for mi in mis}
+        group_names = unique(list(groups.values()))
+        groups = [[mi for mi in mis if groups[mi]==name] for name in group_names]
+        N_g = len(group_names)
+    print(groups,group_names)
+    if colors is None: 
+        colors = matplotlib.cm.rainbow(np.linspace(0, 1, N_g))  # @UndefinedVariable
     if Dict.valid(mis):
-        if labels is None or weight_dict is None:
+        if index_labels is None or weights is None:
             temp = list(mis.keys())
             if (List|Tuple).valid(temp[0]):
-                if not (labels is None and weight_dict is None):
-                    raise ValueError('mis cannot be dictionary with tuple entries if both labels and weight_dict are specified separately')
-                weight_dict = {mi:mis[mi][0] for mi in mis}
-                labels=  {mi:mis[mi][1] for mi in mis}
+                if not (index_labels is None and weights is None):
+                    raise ValueError('mis cannot be dictionary with tuple entries if both index_labels and weights are specified separately')
+                weights = {mi:mis[mi][0] for mi in mis}
+                index_labels=  {mi:mis[mi][1] for mi in mis}
             else:
-                if weight_dict is None:
-                    weight_dict = mis
+                if weights is None:
+                    weights = mis
                 else:
-                    labels = mis
+                    index_labels = mis
             mis = temp
         else:
-            raise ValueError('mis cannot be dictionary if labels are specified separately')
+            raise ValueError('mis cannot be dictionary if index_labels are specified separately')
     if dims is None:
         try:
             dims = len(mis[0])
@@ -96,27 +116,16 @@ def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
     if len(dims) < 1:
         warnings.warn('Sure you don\'t want to plot anything?')
         return
-    if weight_dict:
-        values = list(weight_dict.values())
-        weight_function = lambda mi: weight_dict[mi]
-    else:
-        if N_q > 1:
-            raise ValueError('Cannot create percentile-groups without weight dictionary')
-        weight_function = lambda mi: 1
-    colors = matplotlib.cm.rainbow(np.linspace(0, 1, N_q))  # @UndefinedVariable
-    fig = plt.figure()#Creates new figure, because adding onto old axes doesn't work if they were created without 3d
-    if len(dims) == 3:
-        ax = fig.gca(projection='3d')
-    else:
-        ax = fig.gca()
-    ax.set_aspect('equal')
-    size_function = lambda mi: sum([weight_function(mi2) for mi2 in mis if mi.equal_mod(mi2, lambda dim: dim not in dims)])
-    sizes = {mi: np.power(size_function(mi), 0.1) for mi in mis}
-    for q in range(N_q):
-        if N_q > 1:
-            plot_indices = [mi for mi in mis if weight_function(mi) >= np.percentile(values, 100 / N_q * q) and weight_function(mi) <= np.percentile(values, 100 / N_q * (q + 1))]
+    if ax is None:
+        fig = plt.figure()#Creates new figure, because adding onto old axes doesn't work if they were created without 3d
+        if len(dims) == 3:
+            ax = fig.gca(projection='3d')
         else:
-            plot_indices = mis
+            ax = fig.gca()
+    ax.set_aspect('equal')
+    size_function = lambda mi: sum([weights[mi2] for mi2 in mis if mi.equal_mod(mi2, lambda dim: dim not in dims)]) 
+    sizes = {mi: np.power(size_function(mi), size_exponent) for mi in mis}
+    for i,plot_indices in enumerate(groups):
         X = np.array([mi[dims[0]] for mi in plot_indices])
         if len(dims) > 1:
             Y = np.array([mi[dims[1]] for mi in plot_indices])
@@ -127,21 +136,21 @@ def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
         else:
             Z = np.array([0 for mi in plot_indices])   
         sizes_plot = np.array([sizes[mi] for mi in plot_indices])
-        if weight_dict:
+        if weights:
             if len(dims) == 3:
-                ax.scatter(X, Y, Z, s = 100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)            
+                ax.scatter(X, Y, Z, s = 50 * sizes_plot / max(sizes.values()), color=colors[i], alpha=1)            
             else:
-                ax.scatter(X, Y, s = 100 * sizes_plot / max(sizes.values()), color=colors[q], alpha=1)
+                ax.scatter(X, Y, s = 50 * sizes_plot / max(sizes.values()), color=colors[i], alpha=1)
         else:
             if len(dims) == 3:
-                ax.scatter(X, Y, Z)
+                ax.scatter(X, Y, Z,color = colors[i],alpha=1)
             else:
-                ax.scatter(X, Y)
-        try:
+                ax.scatter(X, Y,color=colors[i],alpha=1)
+        try:#Prevent collapse if mis only has one entry or only entries in one or two dimensions
             max_range = np.array([X.max() - X.min(), Y.max() - Y.min(), Z.max() - Z.min()]).max()
-            Xb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][0].flatten() + 0.5 * (X.max() + X.min())
-            Yb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][1].flatten() + 0.5 * (Y.max() + Y.min())
-            Zb = 0.5 * max_range * np.mgrid[-1:2:2, -1:2:2, -1:2:2][2].flatten() + 0.5 * (Z.max() + Z.min())
+            Xb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][0].flatten() + 0.5 * (X.max() + X.min())
+            Yb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][1].flatten() + 0.5 * (Y.max() + Y.min())
+            Zb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][2].flatten() + 0.5 * (Z.max() + Z.min())
             if len(dims) == 3:
                 for xb, yb, zb in zip(Xb, Yb, Zb):
                     ax.plot([xb], [yb], [zb], 'w')
@@ -150,20 +159,37 @@ def plot_indices(mis, dims=None, weight_dict=None, N_q=1,labels=None):
                     ax.plot([xb], [yb], 'w')
         except ValueError:
             pass
+    if axis_labels is not None:
+        ax.set_xlabel(axis_labels[0])
+        if len(dims)>1:
+            ax.set_ylabel(axis_labels[1])
+        if len(dims)>1:
+            ax.set_zlabel(axis_labels[2])
+    else:
         ax.set_xlabel('Dim. ' + str(dims[0]))
         if len(dims) > 1:
             ax.set_ylabel('Dim. ' + str(dims[1]))
         if len(dims) > 2:
             ax.set_zlabel('Dim. ' + str(dims[2]))
         plt.grid()
-    if labels:
-        for mi in labels:
-            ax.annotate('{:.3g}'.format(labels[mi]),xy=(mi[0],mi[1]))
-    if weight_dict:
-        ax.legend([patches.Patch(color=color) for color in np.flipud(colors)],
-                    ['{:.0f} -- {:.0f} percentile'.format(100*(N_q-1-i)/N_q,100*(N_q-i)/N_q) for i in reversed(range(N_q))])
+    x_coordinates = [mi[dims[0]] for mi in mis]
+    xticks=list(range(min(x_coordinates),max(x_coordinates)+1))
+    ax.set_xticks(xticks)
+    if len(dims)>1:
+        y_coordinates = [mi[dims[1]] for mi in mis]
+        ax.set_yticks(list(range(min(y_coordinates),max(y_coordinates)+1)))
+    if len(dims)>2:
+        z_coordinates = [mi[dims[2]] for mi in mis]
+        ax.set_zticks(list(range(min(z_coordinates),max(z_coordinates)+1)))
+    if index_labels:
+        for mi in index_labels:
+            ax.annotate('{:.3g}'.format(index_labels[mi]),xy=(mi[0],mi[1]))
+    if legend:
+        ax.legend([patches.Patch(color=color) for color in np.flipud(colors)],group_names)
+    return ax
+
     
-def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None):
+def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None,dry_run=False):
     '''
     Plot polynomial approximation.
     
@@ -176,7 +202,7 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
     if ax is None:
         fig = plt.figure()
         show = True
-        ax = fig.gca() if d==1 else fig.gca(projection='3d')
+        ax = fig.gca() if (d==1 or contour) else fig.gca(projection='3d')
     if d == 1:
         if N is None:
             N = 200
@@ -187,7 +213,8 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
             Z = f(X)
         else:
             Z = np.array([f(x) for x in X])
-        ax.plot(X, Z,*args,**kwargs)
+        if not dry_run:
+            C = ax.plot(X, Z,*args,**kwargs)
     elif d == 2:
         if N is None:
             N = 30
@@ -199,12 +226,14 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
         X, Y = meshgrid(T[:, 0], T[:, 1])
         Z = grid_evaluation(X, Y, f,vectorized=vectorized)
         if contour:
-            ax.contour(X,Y,Z)
+            if not dry_run:
+                C = ax.contour(X,Y,Z)#,levels = np.array([0.001,1000]),colors=['red','blue'])
         else:
-            ax.plot_surface(X, Y, Z)
+            if not dry_run:
+                C = ax.plot_surface(X, Y, Z)
     if show:
         plt.show()
-    return ax,X,Z
+    return ax,C,Z
     
 def plot3D(X, Y, Z):
     '''
@@ -242,7 +271,7 @@ def plot_divergence(times, values, name=None, title=None, divergence_type='algeb
     
 def plot_convergence(times, values, name=None, title=None, reference='self', convergence_type='algebraic', expect_residuals=None,
                      expect_times=None, plot_rate='fit', base = np.exp(0),xlabel = 'x', p=2, preasymptotics=True, stagnation=False, marker='.',
-                     legend='lower left',relative = False):
+                     legend='lower left',relative = False,ax = None):
     '''
     Show loglog or semilogy convergence plot.
     
@@ -279,10 +308,11 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
     '''
     name = name or ''
     self_reference = (isinstance(reference,str) and reference=='self') #reference == 'self' complains when reference is a numpy array
-    color = next(plt.gca()._get_lines.prop_cycler)['color']
-    plt.gca().tick_params(labeltop=False, labelright=True, right=True, which='both')
-    plt.gca().yaxis.grid(which="minor", linestyle='-', alpha=0.5)
-    plt.gca().yaxis.grid(which="major", linestyle='-', alpha=0.6)
+    ax = ax or plt.gca()
+    color = next(ax._get_lines.prop_cycler)['color']
+    ax.tick_params(labeltop=False, labelright=True, right=True, which='both')
+    ax.yaxis.grid(which="minor", linestyle='-', alpha=0.5)
+    ax.yaxis.grid(which="major", linestyle='-', alpha=0.6)
     c_ticks = 3
     ACCEPT_MISFIT = 0.1
     values, times = np.squeeze(values), np.squeeze(times)
@@ -363,24 +393,24 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
             name+=f'${base}^{{{base_rate_str}{xlabel}}}$'
         if convergence_type == 'algebraic':
             X = np.linspace(np.exp(min_x_fit), np.exp(max_x_fit), c_ticks)
-            plt.loglog(X, np.exp(offset) * X ** rate, '--', color=color)
+            ax.loglog(X, np.exp(offset) * X ** rate, '--', color=color)
         else:
             X = np.linspace(min_x_fit, max_x_fit, c_ticks)
-            plt.semilogy(X, np.exp(offset + rate * X), '--', color=color)
+            ax.semilogy(X, np.exp(offset + rate * X), '--', color=color)
     max_x_data = max_x
     keep_1 = (x <= max_x_data)
     if convergence_type == 'algebraic':
-        plt.loglog(np.array(times)[keep_1], np.array(residuals)[keep_1], label=name, marker=marker, color=color)
-        plt.loglog(np.array(times), np.array(residuals), marker=marker, color=color, alpha=0.5)
+        ax.loglog(np.array(times)[keep_1], np.array(residuals)[keep_1], label=name, marker=marker, color=color)
+        ax.loglog(np.array(times), np.array(residuals), marker=marker, color=color, alpha=0.5)
     else:
-        plt.semilogy(np.array(times)[keep_1], np.array(residuals)[keep_1], label=name, marker=marker, color=color)
-        plt.semilogy(np.array(times), np.array(residuals), marker=marker, color=color, alpha=0.5)
+        ax.semilogy(np.array(times)[keep_1], np.array(residuals)[keep_1], label=name, marker=marker, color=color)
+        ax.semilogy(np.array(times), np.array(residuals), marker=marker, color=color, alpha=0.5)
     if expect_times is not None and expect_residuals is not None:
-        plt.loglog(expect_times, expect_residuals, '--', marker=marker, color=color) 
+        ax.loglog(expect_times, expect_residuals, '--', marker=marker, color=color) 
     if name:
-        plt.legend(loc=legend)
+        ax.legend(loc=legend)
     if title:
-        plt.title(title)
+        ax.set_title(title)
     return rate
 
 def _keep(x, y, l_bound, r_bound):
