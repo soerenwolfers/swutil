@@ -6,16 +6,17 @@ import os
 import inspect
 import time
 import sys
+import typing
 import subprocess
 import pathos
+import builtins
 import argparse
 import multiprocessing
 
 from swutil.aux import split_list, random_string, chain, cmd_exists
-from swutil.validation import In, Bool, Function, validate_args, Passed, NotPassed
-#TODO: Add optional logging
-
-class Locker(object):
+from swutil.validation import In, Bool, Function, validate_args, Passed, NotPassed,Function,String
+Pool = pathos.multiprocessing.ProcessingPool
+class Locker:
     def __init__(self):
         self.mgr = multiprocessing.Manager()
     def get_lock(self):
@@ -24,24 +25,34 @@ class Locker(object):
 def wrap_mpi(f):
     info = argparse.Namespace()
     info.wrap_MPI = True
-    return MultiProcessorWrapper(f, _MPI_processor, _MPI_finalizer, info)   
+    def _lam(*args,**kwargs):
+        return _MultiProcessorWrapper_call(args,kwargs,f,_MPI_processor,_MPI_finalizer,info)
+    return _lam
 
 @validate_args(warnings=False)
-class EasyHPC(object):#DecoratorFactory
-    def __init__(self,
-                 backend:In('MP', 'MPI')='MP',
-                 n_tasks:In('implicitly many', 'many', 'one', 'count')='one',#Count is special case of implicitly many where it is already known how to split jobs 
-                 n_results:In('many', 'one')='one',
-                 aux_output:Bool=True,  # Parellelize only first entry of n_results is tuple
-                 reduce:Function=NotPassed,
-                 split_job=NotPassed
-                 ):
+def EasyHPC(backend:In('MP', 'MPI')|Function='MP',
+            n_tasks:In('implicitly many', 'many', 'one', 'count')='one',#Count is special case of implicitly many where it is already known how to split jobs 
+            n_results:In('many', 'one')='one',
+            aux_output:Bool=True,  # Parellelize only first entry of n_results is tuple
+            reduce:Function=None,
+            split_job=NotPassed,
+            parallel = True,#If false, use the wrapper functionality of EasyHPC but don't actually use multiprocessing
+            method = None,
+            pool = None
+            ):
         '''
         :param n_tasks: How many tasks does the decorated function handle? 
         :param n_results: If the decorated function handles many tasks at once, are the results reduced (n_results = 'one') or not (as many results as tasks)?
-        :param reducee: Function that reduces multiple outputs to a single output
-        :param splitjob: Function that converts an input to the decorated function that represents one large job to two smaller jobs
+        :param reduce: Function that reduces multiple outputs to a single output
+        :param splitjob: Function that converts an input (to the decorated function) that represents one large job to two smaller jobs
+
+        NOTE: don't turn this into a class, you'll run into strange pickling errors
         '''
+        self = argparse.Namespace()
+        direct_call =  (~String&Function).valid(backend)
+        if direct_call:
+            f = backend
+            backend = 'MP'
         if backend == 'MPI': 
             self.processor = _MPI_processor
             self.finalizer = _MPI_finalizer
@@ -51,61 +62,64 @@ class EasyHPC(object):#DecoratorFactory
         self.info = argparse.Namespace()
         self.info.n_tasks = n_tasks
         self.info.n_results = n_results
+        self.info.parallel = parallel
         self.info.reduce = reduce
         self.info.wrap_MPI = False
         self.info.aux_output = aux_output 
+        self.info.method = method
+        self.info.pool = pool or Pool()
         self.info.split_job = split_job
         if self.info.n_tasks == 'implicitly many':
             if self.info.n_results == 'many':
                 raise ValueError('Do not know how to handle functions that handle implicitly many tasks and return multiple results')
             if NotPassed(self.info.split_job):
                 raise ValueError('Functions handling implicitly many tasks must specify how to split a job using `split_job`')
-        if self.info.n_results == 'one':
-            if NotPassed(self.info.reduce):
-                raise ValueError('Functions that return single results must specify how to reduce multiple results using `reduce`')
-    def __call__(self, f):
-        return MultiProcessorWrapper(f, self.processor, self.finalizer, self.info)
+        if direct_call:
+            def _lam(*args,**kwargs):
+                return _MultiProcessorWrapper_call(args,kwargs,f,self.processor,self.finalizer,self.info)
+            return _lam
+        return lambda f: _easy_hpc_call(f,self)
 
-class MultiProcessorWrapper(object):
-    def __init__(self, f, processor, finalizer, info):
-        self.f = f
-        self.processor = processor
-        self.finalizer = finalizer
-        self.info = info
-        self.pool = None
-    def fix_pool(self):
-        N = pathos.multiprocessing.cpu_count()
-        p = pathos.multiprocessing.Pool(N)
-        self.pool = p
-    def end_pool(self):
-        self.pool.close()
-        self.pool.join()
-        self.pool = None
-    def __call__(self, *args, **kwargs):  
+def _easy_hpc_call(f,self):
+    _easy_hpc_info = (f,self.processor,self.finalizer,self.info)
+    def _lam(*args,**kwargs):
+        return _MultiProcessorWrapper_call(args,kwargs,f,self.processor,self.finalizer,self.info)
+    return _lam
+
+def _MultiProcessorWrapper_call(args,kwargs,f,processor,finalizer,info):
+        if info.method is None:
+            info.method = hasattr(f,'__qualname__') and '.' in f.__qualname__ and '<locals>' not in f.__qualname__ and not inspect.ismethod(f)#the last check seems to be contradictory, however, the info.method refers to situations when the decorator is applied directly at the mehtod definition, not later on (e.g. in the __init__) and in these situations inspect.ismethod actually returns False
         if '__second_call' in kwargs:
             kwargs.pop('__second_call')
-            return self.f(*args, **kwargs)
-        else:
-            if args:
-                M, args = args[0], args[1:]
+            return f(*args, **kwargs)
+        if args:
+            if info.method:
+                M,args = args[1],args[0:1]+args[2:]
             else:
-                if not self.info.wrap_MPI:
-                    raise ValueError('Must specify task(s)')
-                M, args = NotPassed, NotPassed               
-            f_path = inspect.getsourcefile(self.f)
-            f_name = self.f.__name__
-            ID = '.easyhpc_' + f_name + '_' + str(time.time()) + '_' + random_string(8)#TODO: use module tempfile
-            r, ID = self.processor(args, kwargs, M, self.f, f_path, f_name, ID, self.info,self.pool)
-            out = _reduce_first_output(self.info, r)
-            if self.finalizer:
-                self.finalizer(ID)
-            return out
-def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info,pool):
+                M, args = args[0], args[1:]
+        else:
+            if not info.wrap_MPI:
+                raise ValueError('Must specify task(s)')
+            M, args = NotPassed, NotPassed               
+        if info.n_tasks in ['many','one']:
+            M = list(M)
+            if len(M) == 1:
+                return _reduce_first_output(info,[[f(args[0],M[0],*args[1:], **kwargs) if info.method else f(M[0],*args,**kwargs)]])
+        f_path = inspect.getsourcefile(f)
+        f_name = f.__name__
+        ID = '.easyhpc_' + f_name + '_' + str(time.time()) + '_' + random_string(8)#TODO: use module tempfile
+        r, ID = processor(args, kwargs, M, f, f_path, f_name, ID, info)
+        out = _reduce_first_output(info, r)
+        if finalizer:
+            finalizer(ID)
+        return out
+
+def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info):
     from mpi4py import MPI
     if info.wrap_MPI:
         child = MPI.COMM_SELF.Spawn(
             sys.executable,
-            args=['-c', 'import swutil.multiprocessing;swutil.multiprocessing._MPI_worker(mpi_child=True)'],
+            args=['-c', 'import swutil.hpc;swutil.hpc._MPI_worker(mpi_child=True)'],
             maxprocs=1)
         child.bcast((args, kwargs, M, f_path, f_name, info), root=MPI.ROOT)
         r = child.recv(source=MPI.ANY_SOURCE)
@@ -126,17 +140,25 @@ def _MPI_processor(args, kwargs, M, f, f_path, f_name, ID, info,pool):
         r = _MPI_worker(pure_python=(args, kwargs, M, f_path, f_name, info))
     return r, ID
 
-def _MP_processor(args, kwargs, M, f, f_path, f_name, ID, info,pool):
-    if pool is None:
-        N = pathos.multiprocessing.cpu_count()
-        p = pathos.multiprocessing.Pool(N)
+def _MP_processor(args, kwargs, M, f, f_path, f_name, ID, info):
+    if info.parallel:
+        if info.pool is not None:
+            p = info.pool
+        else:
+            p = Pool()
+        try:
+            p.map(lambda:None,[])
+        except ValueError:
+            p.restart()
+        N = p.ncpus
+        map = p.map
     else:
-        p=pool
-        N=pathos.multiprocessing.cpu_count()
-    r = p.map(_MP_worker, [(f_path, f_name, args, kwargs, M, n, N, info) for n in range(N)])
-    if pool is None:
-        p.close()
-        p.join()
+        map = lambda f,x: [f(x) for x in x]
+        N = 1
+    #t = info.pool
+    #del info.pool
+    r = map(_MP_worker, [(f, args, kwargs, M, n, N, info) for n in range(N)])
+    #info.pool = t
     return r, ID
 
 def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
@@ -157,7 +179,7 @@ def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         N = comm.Get_size()
-    rr = _common_work(f_filename, f_name, M, N, rank, args, kwargs, info)
+    rr = _common_work(_load_f(f_filename,f_name), M, N, rank, args, kwargs, info)
     if mpi_child:
         r = comm.gather(rr, 0)
         if comm.Get_rank() == 0:
@@ -173,22 +195,25 @@ def _MPI_worker(ID=None, pure_python=False, mpi_child=False):
                 dill.dump(r, file)
         
 def _MP_worker(arg):
-    (f_filename, f_name, args, kwargs, M, rank, N, info) = arg
+    (f, args, kwargs, M, rank, N, info) = arg
     numpy.random.seed(rank)#TODO: replace by randomint+rank
-    return _common_work(f_filename, f_name, M, N, rank, args, kwargs, info) 
-           
-def _common_work(f_filename, f_name, M, N, rank, args, kwargs, info):
+    return _common_work(f, M, N, rank, args, kwargs, info) 
+
+def _load_f(f_filename,f_name):           
     import importlib.util
     spec = importlib.util.spec_from_file_location("module.name", f_filename)
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
-    f = getattr(foo, f_name)
+    return getattr(foo, f_name)
+
+def _common_work(f,M, N, rank, args, kwargs, info):
     if info.wrap_MPI:
         jobs = [M] * N
     else:
         if info.n_tasks == 'count':
             jobs = [int(math.ceil(M / N))] * N
         elif info.n_tasks in ('many', 'one'):
+            M = list(M)
             jobs = split_list(M, N)
         elif info.n_tasks == 'implicitly many':
             jobs = [M]
@@ -198,17 +223,16 @@ def _common_work(f_filename, f_name, M, N, rank, args, kwargs, info):
                 else:
                     need=N-len(jobs)
                     jobs=list(itertools.chain(*([info.split_job(job) for job in jobs[:need]]+[jobs[need:]])))
-    if isinstance(f, MultiProcessorWrapper):
+    if hasattr(f,'__name__') and f.__name__ == '_MultiProcessorWrapper_call':
         kwargs['__second_call'] = True
     if not info.wrap_MPI and info.n_tasks == 'one':
         if Passed(M):
-            return  [f(job, *args, **kwargs) for job in jobs[rank]]
+            return  [f(args[0],job,*args[1:], **kwargs) if info.method else f(job,*args,**kwargs) for job in jobs[rank]]
         else:
             return [f(**kwargs) for job in jobs[rank]]
     else:
         if Passed(M):
             out= f(jobs[rank], *args, **kwargs)
-            #print(jobs[rank],out)
             return out
         else:
             return f(**kwargs)
@@ -218,6 +242,8 @@ def _reduce_first_output(info, r):
     aux_output = False if info.wrap_MPI else (info.aux_output and isinstance(r[0], tuple))
     numpy_mode = isinstance(r[0], numpy.ndarray) or aux_output and isinstance(r[0][0], numpy.ndarray)
     concatenate = numpy.concatenate if numpy_mode else lambda r: list(itertools.chain(*r))
+    if info.reduce is None:
+        info.reduce = lambda x:x
     if info.wrap_MPI:
         reduce = lambda r: r[0]
     else:
