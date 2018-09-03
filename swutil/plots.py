@@ -73,21 +73,20 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
     TODO: exchange index_labels and dims, exchange quantiles and dims
     '''
     if weights is None:
-        weights = defaultdict(lambda: 1)
+        weights = {mi: 1 for mi in mis}
     if Function.valid(weights):
         weights = {mi:weights(mi) for mi in mis}
     values = list(weights.values())
     if Integer.valid(groups):
         N_g = groups
         groups = [[mi for mi in mis if (weights[mi] > np.percentile(values, 100/groups*g) or g==0) and weights[mi] <= np.percentile(values, 100/groups*(g+1))] for g in range(N_g)]
-        group_names = ['{:.0f} -- {:.0f} percentile'.format(100/groups*(N_g-i-1),100/groups*(N_g-i)) for i in reversed(range(N_g))]
+        group_names = ['{:.0f} -- {:.0f} percentile'.format(100/N_g*(N_g-i-1),100/N_g*(N_g-i)) for i in reversed(range(N_g))]
     else:
         if Function.valid(groups):
             groups = {mi:groups(mi) for mi in mis}
         group_names = unique(list(groups.values()))
         groups = [[mi for mi in mis if groups[mi]==name] for name in group_names]
         N_g = len(group_names)
-    print(groups,group_names)
     if colors is None: 
         colors = matplotlib.cm.rainbow(np.linspace(0, 1, N_g))  # @UndefinedVariable
     if Dict.valid(mis):
@@ -184,12 +183,12 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
     if index_labels:
         for mi in index_labels:
             ax.annotate('{:.3g}'.format(index_labels[mi]),xy=(mi[0],mi[1]))
-    if legend:
+    if legend and len(group_names)>1:
         ax.legend([patches.Patch(color=color) for color in np.flipud(colors)],group_names)
     return ax
 
     
-def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None,dry_run=False):
+def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None,dry_run=False,show=None):
     '''
     Plot polynomial approximation.
     
@@ -198,10 +197,9 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
     kwargs = kwargs or {}
     args = args or []
     d = 1 if ylim is None else 2
-    show = False
     if ax is None:
         fig = plt.figure()
-        show = True
+        show = show if show is not None else True
         ax = fig.gca() if (d==1 or contour) else fig.gca(projection='3d')
     if d == 1:
         if N is None:
@@ -227,7 +225,7 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
         Z = grid_evaluation(X, Y, f,vectorized=vectorized)
         if contour:
             if not dry_run:
-                C = ax.contour(X,Y,Z)#,levels = np.array([0.001,1000]),colors=['red','blue'])
+                C = ax.contour(X,Y,Z,levels = np.array([0.001,1000]),colors=['red','blue'])
         else:
             if not dry_run:
                 C = ax.plot_surface(X, Y, Z)
