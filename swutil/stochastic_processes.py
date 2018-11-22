@@ -1,10 +1,11 @@
 import numpy as np
-from swutil.np_tools import integral, toeplitz_multiplication, MCSlicer
-from swutil.time import Timer
 import scipy.special
 import scipy.linalg
-from swutil.plots import plot_convergence
 from matplotlib import pyplot
+
+from swutil.plots import plot_convergence
+from swutil.np_tools import integral, toeplitz_multiplication, MCSlicer
+from swutil.time import Timer
 
 def logGBM(times,r,sigma,S0,d,M,dW=None):
     '''
@@ -23,11 +24,9 @@ def logGBM(times,r,sigma,S0,d,M,dW=None):
     if np.squeeze(sigma).ndim<=1:
         dF = sigma*dW
         ito_correction = np.squeeze(sigma**2/2)
-        #print(ito_correction,'asdf')
     else:
         dF = np.einsum('ij,...j',sigma,dW)
         ito_correction = np.sum(sigma**2,1)/2
-        #print(ito_correction)
     drift  = (r-ito_correction)*times[None,:,None]
     diffusion = integral(dF=dF,axis=1,cumulative = True)
     return p0 + drift + diffusion
@@ -61,8 +60,6 @@ def logHeston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
         #temp = nu[:,i-1,:]*np.exp((-0.5*b_geom**2)*dt+b_geom*dW[:,i-1,d:])
         #nu[:,i,:] = theta + np.exp(-kappa*dt)*(temp-theta)
     S = S0*np.exp(integral(np.sqrt(nu),dF = dW[:,:,:d],axis=1,cumulative = True)+integral(mu - 0.5*nu,F = times,axis=1,trapez=False,cumulative = True))
-    #i=16
-    #print(np.mean(nu[:,i,0],axis=0),np.std(nu[:,i,0],axis=0),np.percentile(S[:,i,0],axis=0,q=5))
     return np.log(np.concatenate((S,nu),axis=-1))
 
 
@@ -119,8 +116,6 @@ def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,retur
     v = xi*np.exp(Y-0.5*(eta**2)*times**(2*H))
     S = S0*np.exp(integral(np.sqrt(v),dF = dZ,axis=0,cumulative = True)+integral(r - 0.5*v,F = times,axis=0,trapez=False,cumulative = True))
     if return_v:
-        #i=4
-        #print(np.percentile(v[:,i],axis=0,q=5),np.percentile(v[:,i],axis=0,q=95),np.percentile(S[:,i],axis=0,q=5),np.percentile(S[:,i],axis=0,q=95))
         return np.array([S,v])
     else:
         return np.array([S])
@@ -173,21 +168,3 @@ def _v_rThreeHalves_direct(Y,times,alpha,vstar,xi,eta,H):
     print(np.mean(v))
     return v
     
-    
-if __name__=='__main__':
-    L = 8
-    M = int(1e6)
-    out = np.zeros((L,2))
-    #N= 2**L+1
-    #dt = 1/(N-1)
-    #dW=np.sqrt(dt)*np.random.normal(size=(N-1,1))
-    #dW_orth = np.sqrt(dt)*np.random.normal(size=(N-1,1))
-    #W = np.concatenate(([[0]],np.cumsum(dW,axis = 0)))
-    #W_orth = np.concatenate(([[0]],np.cumsum(dW_orth,axis = 0)))
-    for l in range(1,L):
-        with Timer():
-            out[l] = MCSlicer(lambda M: np.exp(-0.05)*np.maximum(1-rBergomi(H=0.07,T=1,eta=1.9,xi = 0.235**2,rho = -0.9,S0=1,r=0.05,N= 2**l+1,M=M)[-1],0),M)
-        print(out.__repr__())
-    plot_convergence(2**np.arange(L),out)
-    from matplotlib import pyplot as plt
-    plt.show()

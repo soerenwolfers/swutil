@@ -66,7 +66,7 @@ def final(option,value,config):
     else:
         return (option,value)
     
-class Config(object):
+class Config:
     def __init__(self,config=None,rules=None):
         '''
         :param config: Old configuration

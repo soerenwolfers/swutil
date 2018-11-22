@@ -2,25 +2,27 @@
 Various plotting functions
 '''
 import re
-import matplotlib.pyplot as plt
+import os
+from collections import OrderedDict, defaultdict
+import warnings
+
 import numpy as np
+from numpy import meshgrid
+import scipy.optimize
 from matplotlib import cm, patches
 from matplotlib.colors import LightSource
+from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib
-import warnings
-import matplotlib2tikz
 from matplotlib.pyplot import savefig
-from swutil.np_tools import weighted_median, grid_evaluation
-import scipy.optimize
+import matplotlib2tikz
+import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport. Axes3D is needed for projection = '3d' below @UnusedImport
+
+from swutil.files import path_from_keywords
+from swutil.np_tools import weighted_median, grid_evaluation
 from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer,Function
 from swutil.collections import unique
-from numpy import meshgrid
-from matplotlib.backends.backend_pdf import PdfPages
-import os
 
-from collections import OrderedDict, defaultdict
-from swutil.files import path_from_keywords
 def save(*name, pdf=True, tex=False,figs = None):
     if len(name)==1:
         name = name[0]
@@ -56,7 +58,7 @@ def save(*name, pdf=True, tex=False,figs = None):
                     os.remove(savenames[n])
                 except:
                     pass
-#@validate_args()
+
 def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labels=None, colors = None,axis_labels = None,size_exponent=0.1,ax=None):
     '''
     Plot multi-index set

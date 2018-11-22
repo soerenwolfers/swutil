@@ -56,7 +56,7 @@ def find_files(pattern, path=None,match_name=False):
     '''
     https://stackoverflow.com/questions/1724693/find-a-file-in-python
 
-    WARNING: pattern is matched to entire path not to file names
+    WARNING: pattern is by default matched to entire path not to file names
     '''
     if not path:
         path = os.getcwd()

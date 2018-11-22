@@ -3,15 +3,15 @@ import timeit
 def snooze(value):
     '''
     time.sleep() substitute
-    Keep busy for some time (very roughly and depending on machine value is ms)
-    :param value: Time. Actual busy time depends on machine
+    Keep busy for some time (very roughly and depending on machine, `value` is in ms)
+
+    :param value: Time
     :type value: Number
     '''
     for i in range(int(0.65e3 * value)):
-        __ = 2 ** (i / value)
-    return 0
+        _ = 2 ** (i / value)
 
-class Timer():
+class Timer:
     def __init__(self,name = None):
         self.name = name
     def __enter__(self,*args):

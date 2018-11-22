@@ -1,21 +1,22 @@
-import numpy
 import random
+import inspect
 import string
 import shutil
 import re
 import keyword
+import ast
 import readline
 from datetime import timedelta
+
+import numpy as np
+
+from swutil.validation import String, Integer
 
 class no_context:
     def __enter__(self, *args):
         pass
     def __exit__(self, *args):
         pass
-
-from swutil.validation import String, Integer
-import numpy as np
-import ast
 
 def smart_range(*args):
     '''
@@ -95,8 +96,6 @@ def smart_range(*args):
         points = np.linspace(start,end,num=N)
         return points[lopen:len(points)-ropen]
 
-import inspect
-
 def ld_to_dl(ld):
     '''
     Convert list of dictionaries to dictionary of lists
@@ -131,8 +130,10 @@ def string_dialog(title,label):
     root = tkinter.Tk()
     root.withdraw()#Somehow this is sometimes needed to prevent errors about something in Tk not existing yet
     return tkinter.simpledialog.askstring(title, label)
+
 def raise_exception(title):
     raise Exception(title)
+
 def cmd_exists(cmd):
     '''
     Check whether given command is available on system
@@ -149,7 +150,7 @@ def split_integer(N,bucket = None, length = None):
             return []
         else:
             raise ValueError()
-    tmp = numpy.array([N//length]*length)
+    tmp = np.array([N//length]*length)
     M = N % length
     tmp[:M]+=1
     return list(tmp)
@@ -158,13 +159,13 @@ def split_list(l,N):
     '''
     Subdivide list into N lists
     '''
-    npmode = isinstance(l,numpy.ndarray)
+    npmode = isinstance(l,np.ndarray)
     if npmode:
         l=list(l)
-    g=numpy.concatenate((numpy.array([0]),numpy.cumsum(split_integer(len(l),length=N))))
+    g=np.concatenate((np.array([0]),np.cumsum(split_integer(len(l),length=N))))
     s=[l[g[i]:g[i+1]] for i in range(N)]
     if npmode:
-        s=[numpy.array(sl) for sl in s]
+        s=[np.array(sl) for sl in s]
     return s
 
 def random_string(length):
@@ -210,6 +211,7 @@ def string_from_seconds(seconds):
     elif len(parts) == 2:
         td = '.'.join([parts[0],parts[1][:2]])
     return td
+
 def input_with_prefill(prompt, text):
     '''
     https://stackoverflow.com/questions/8505163/is-it-possible-to-prefill-a-input-in-python-3s-command-line-interface
@@ -237,6 +239,3 @@ def is_identifier(s):
     '''
     return s.isidentifier() and not keyword.iskeyword(s)
 
-if __name__ == '__main__':
-    for _ in range(100):
-        print(random_word(length = 17,dictionary = True))

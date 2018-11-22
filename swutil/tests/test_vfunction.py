@@ -2,7 +2,7 @@
 Test swutil.v_function
 '''
 import unittest
-from swutil.v_function import VFunction
+from swutil.collections import VFunction
 
 class TestVFunction(unittest.TestCase):
 

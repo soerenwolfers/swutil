@@ -1,7 +1,7 @@
 import datetime
 from swutil.aux import no_context
         
-class Log(object):   
+class Log:   
     def __init__(self,print_filter=True,write_filter=False,file_name=None,lock=None):
         if print_filter is True:
             print_filter = lambda _: True
@@ -90,7 +90,7 @@ def filter_generator(require_group=None,require_tags=None,require_message=None,e
                 )
     return filter
     
-class Entry(object):
+class Entry:
     def __init__(self,group=None,message=None,tags=None):
         if group is None:
             self.group=''

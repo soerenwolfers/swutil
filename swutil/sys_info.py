@@ -1,6 +1,8 @@
 import sys
-from IPython.utils.capture import capture_output
 import platform
+
+from IPython.utils.capture import capture_output
+
 def modules():
     names = sys.modules.keys()
     names = [name for name in names if not '.' in name]
