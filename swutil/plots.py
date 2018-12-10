@@ -118,12 +118,11 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
         warnings.warn('Sure you don\'t want to plot anything?')
         return
     if ax is None:
-        fig = plt.figure()#Creates new figure, because adding onto old axes doesn't work if they were created without 3d
+        fig = plt.figure() # Creates new figure, because adding onto old axes doesn't work if they were created without 3d
         if len(dims) == 3:
             ax = fig.gca(projection='3d')
         else:
             ax = fig.gca()
-    ax.set_aspect('equal')
     size_function = lambda mi: sum([weights[mi2] for mi2 in mis if mi.equal_mod(mi2, lambda dim: dim not in dims)]) 
     sizes = {mi: np.power(size_function(mi), size_exponent) for mi in mis}
     for i,plot_indices in enumerate(groups):
@@ -147,19 +146,16 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
                 ax.scatter(X, Y, Z,color = colors[i],alpha=1)
             else:
                 ax.scatter(X, Y,color=colors[i],alpha=1)
-        try:#Prevent collapse if mis only has one entry or only entries in one or two dimensions
-            max_range = np.array([X.max() - X.min(), Y.max() - Y.min(), Z.max() - Z.min()]).max()
-            Xb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][0].flatten() + 0.5 * (X.max() + X.min())
-            Yb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][1].flatten() + 0.5 * (Y.max() + Y.min())
-            Zb = 0.5 * max_range * np.mgrid[-0:2:2, -0:2:2, -0:2:2][2].flatten() + 0.5 * (Z.max() + Z.min())
-            if len(dims) == 3:
-                for xb, yb, zb in zip(Xb, Yb, Zb):
-                    ax.plot([xb], [yb], [zb], 'w')
+        if True:
+            if len(dims)==3:
+                axs='xyz'
             else:
-                for xb, yb in zip(Xb, Yb):
-                    ax.plot([xb], [yb], 'w')
-        except ValueError:
-            pass
+                axs='xy'
+            extents = np.array([getattr(ax, 'get_{}lim'.format(dim))() for dim in axs])
+            sz = extents[:,1] - extents[:,0]
+            maxsize = max(abs(sz))
+            for dim in axs:
+                getattr(ax, 'set_{}lim'.format(dim))(0, maxsize)
     if axis_labels is not None:
         ax.set_xlabel(axis_labels[0])
         if len(dims)>1:
@@ -380,7 +376,7 @@ def plot_convergence(times, values, name=None, title=None, reference='self', con
                               + (' Estimated true rate: {}.'.format(real_rate) if real_rate else '')
                               + (' Fitted rate: {}.'.format(rate) if rate else ''))      
     if plot_rate:
-        name += 'Fitted rate' if plot_rate == 'fit' else 'Plotted rate:'
+        name += 'Fitted rate: ' if plot_rate == 'fit' else 'Plotted rate: '
         if convergence_type == 'algebraic':
             name+='{:.2g})'.format(rate) 
         else:
