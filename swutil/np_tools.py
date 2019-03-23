@@ -19,6 +19,15 @@ def one_changed(a,i,v):
     t = np.array(a)
     t[i] = v
     return t
+
+def concatenate(arrays,axis):
+    arrays = list(arrays)
+    ndim = max(a.ndim for a in arrays)
+    assert(axis<=ndim)
+    for j,a in enumerate(arrays):
+        if a.ndim < ndim:
+            arrays[j] = np.expand_dims(a,axis)
+    return np.concatenate(arrays,axis=axis)
     
 def MCSlicer(f,M,bucket = int(1e4),length = None):
     Ms = split_integer(M,bucket = bucket,length = length)  
@@ -172,6 +181,7 @@ def grid_evaluation(X, Y, f,vectorized=True):
     1-d arrays with two entries. This function evaluates f on the grid points
     described by X and Y and returns another 2-dimensional array of the shape 
     of X and Y that contains the values of f.
+
     :param X: 2-dimensional array of x-coordinates
     :param Y: 2-dimensional array of y-coordinates
     :param f: function to be evaluated on grid

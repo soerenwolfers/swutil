@@ -7,12 +7,11 @@ from swutil.plots import plot_convergence
 from swutil.np_tools import integral, toeplitz_multiplication, MCSlicer
 from swutil.time import Timer
 
-def logGBM(times,r,sigma,S0,d,M,dW=None):
+def black_scholes(times,r,sigma,S0,d,M,dW=None):
     '''
-    Returns M Euler-Maruyama sample paths of log(S), where 
-        dS = S*r*dt+S*sigma*dW
+    Return M Euler-Maruyama sample paths with N time steps of S_t, where 
+        dS_t = S_t*r*dt+S_t*sigma*dW_t
         S(0)=S0
-    using N time steps
     
     :rtype: M x N x d array
     '''
@@ -29,10 +28,13 @@ def logGBM(times,r,sigma,S0,d,M,dW=None):
         ito_correction = np.sum(sigma**2,1)/2
     drift  = (r-ito_correction)*times[None,:,None]
     diffusion = integral(dF=dF,axis=1,cumulative = True)
-    return p0 + drift + diffusion
+    return np.exp(p0 + drift + diffusion)
 
-def logHeston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
+def heston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
     '''
+    Return M Euler-Maruyama sample paths with N time steps of (S_t,v_t), where
+        (S_t,v_t) follows the Heston model of mathematical finance
+
     :rtype: M x N x d array
     '''
     d_nu = 1 if nu_1d else d
@@ -51,16 +53,12 @@ def logHeston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
         if np.array(rho).size ==1:
             rho = np.array([[1,rho],[rho,1]])
     chol = np.linalg.cholesky(rho)
-    #print(chol)
     dW = np.sqrt(dt)*np.einsum('ij,...j',chol,np.random.normal(size=(M,N-1,d+d_nu)))
     for i in range(1,N):
         dt = times[i]-times[i-1]
         nu[:,i,:] = np.abs(nu[:,i-1,:] + kappa*(theta-nu[:,i-1,:])*dt+xi*np.sqrt(nu[:,i-1,:])*dW[:,i-1,d:])
-        #b_geom = xi/np.sqrt(nu[:,i-1,:])
-        #temp = nu[:,i-1,:]*np.exp((-0.5*b_geom**2)*dt+b_geom*dW[:,i-1,d:])
-        #nu[:,i,:] = theta + np.exp(-kappa*dt)*(temp-theta)
     S = S0*np.exp(integral(np.sqrt(nu),dF = dW[:,:,:d],axis=1,cumulative = True)+integral(mu - 0.5*nu,F = times,axis=1,trapez=False,cumulative = True))
-    return np.log(np.concatenate((S,nu),axis=-1))
+    return np.concatenate((S,nu),axis=-1)
 
 
 def fBrown(H,T,N,M,dW = None,cholesky = False):
@@ -103,7 +101,13 @@ def fBrown(H,T,N,M,dW = None,cholesky = False):
     out = np.concatenate((np.zeros((1,M)),out))
     return out
 
-def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
+def r_bergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
+    '''
+    Return M Euler-Maruyama sample paths with N time steps of (S_t,v_t), where
+        (S_t,v_t) follows the rBergomi model of mathematical finance
+
+    :rtype: M x N x d array
+    '''
     times = np.linspace(0, T, N)
     dt = T/(N-1)
     times = np.reshape(times,(-1,1))
@@ -116,9 +120,9 @@ def rBergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,retur
     v = xi*np.exp(Y-0.5*(eta**2)*times**(2*H))
     S = S0*np.exp(integral(np.sqrt(v),dF = dZ,axis=0,cumulative = True)+integral(r - 0.5*v,F = times,axis=0,trapez=False,cumulative = True))
     if return_v:
-        return np.array([S,v])
+        return np.array([S,v]).T
     else:
-        return np.array([S])
+        return np.array([S]).T
     
 def rThreeHalves(H,T,eta,xi,rho,alpha,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
     times = np.linspace(0, T, N)

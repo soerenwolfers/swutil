@@ -104,7 +104,7 @@ def _MultiProcessorWrapper_call(args,kwargs,f,processor,finalizer,info):
         if info.n_tasks in ['many','one']:
             M = list(M)
             if len(M) == 1:
-                return _reduce_first_output(info,[[f(args[0],M[0],*args[1:], **kwargs) if info.method else f(M[0],*args,**kwargs)]])
+                return _reduce_first_output(info,[[f(args[0],M[0],*args[1:], **kwargs) if info.method else f(M[0],*args,**kwargs)]])#TODO this currently doesn't run parallel even if parallel is demanded, might cause debugging headaches
         f_path = inspect.getsourcefile(f)
         f_name = f.__name__
         ID = '.easyhpc_' + f_name + '_' + str(time.time()) + '_' + random_string(8)#TODO: use module tempfile
