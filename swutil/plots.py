@@ -23,7 +23,7 @@ from swutil.np_tools import weighted_median, grid_evaluation
 from swutil.validation import Float, Dict, List, Tuple, Bool, String, Integer,Function
 from swutil.collections import unique
 
-def save(*name, pdf=True, tex=False,figs = None):
+def save(*name, pdf=True, tex=False, png = False, figs = None):
     if len(name)==1:
         name = name[0]
     else:
@@ -37,27 +37,32 @@ def save(*name, pdf=True, tex=False,figs = None):
         if figs is not None:
             raise ValueError('tex only supports saving current figure')
         matplotlib2tikz.save(name + '.tex')
-    if pdf:
-        if figs=='current':
-            savefig(name + '.pdf', bbox_inches='tight')
-        else:
-            if figs is None or figs=='all':
-                figs = plt.get_fignums()
-            savenames = {n:name+'_{:d}.pdf'.format(n) for n in figs}
-            for n in figs:
-                plt.figure(n)
-                savefig(savenames[n],bbox_inches='tight')
-            from PyPDF2 import PdfFileMerger
-            merger = PdfFileMerger()
-            for n in figs:
-                merger.append(open(savenames[n], 'rb'))
-            with open(name+'.pdf', "wb") as fout:
-                merger.write(fout)
-            for n in figs:
-                try:
-                    os.remove(savenames[n])
-                except:
-                    pass
+    if pdf or png:
+        def save(format):
+            nonlocal figs
+            if figs=='current':
+                savefig(name + '.' +format, bbox_inches='tight')
+            else:
+                if figs is None or figs=='all':
+                    figs = plt.get_fignums()
+                savenames = {n:name+('_{:d}'.format(n) if len(figs)>1 else '')+'.'+format for n in figs}
+                for n in figs:
+                    plt.figure(n)
+                    savefig(savenames[n],bbox_inches='tight')
+                if format=='pdf' and len(figs)>1:
+                    from PyPDF2 import PdfFileMerger
+                    merger = PdfFileMerger()
+                    for n in figs:
+                        merger.append(open(savenames[n], 'rb'))
+                    with open(name+'.'+format, "wb") as fout:
+                        merger.write(fout)
+                    for n in figs:
+                        try:
+                            os.remove(savenames[n])
+                        except:
+                            pass
+        if pdf: save('pdf')
+        if png: save('png')
 
 def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labels=None, colors = None,axis_labels = None,size_exponent=0.1,ax=None):
     '''
@@ -163,11 +168,11 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
         if len(dims)>1:
             ax.set_zlabel(axis_labels[2])
     else:
-        ax.set_xlabel('Dim. ' + str(dims[0]))
+        ax.set_xlabel('$k_' + str(dims[0])+'$',size=20)
         if len(dims) > 1:
-            ax.set_ylabel('Dim. ' + str(dims[1]))
+            ax.set_ylabel('$k_' + str(dims[1])+'$',size=20)
         if len(dims) > 2:
-            ax.set_zlabel('Dim. ' + str(dims[2]))
+            ax.set_zlabel('$k_' + str(dims[2])+'$',size=20)
         plt.grid()
     x_coordinates = [mi[dims[0]] for mi in mis]
     xticks=list(range(min(x_coordinates),max(x_coordinates)+1))
@@ -186,7 +191,7 @@ def plot_indices(mis, dims=None, weights=None, groups=1,legend = True,index_labe
     return ax
 
     
-def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None,dry_run=False,show=None):
+def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,args=None,kwargs=None,dry_run=False,show=None,include_endpoints=False):
     '''
     Plot polynomial approximation.
     
@@ -202,8 +207,11 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
     if d == 1:
         if N is None:
             N = 200
-        L = xlim[1] - xlim[0]
-        X = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N)
+        if include_endpoints:
+            X = np.linspace(xlim[0],xlim[1],N)
+        else:
+            L = xlim[1] - xlim[0]
+            X = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N)
         X = X.reshape((-1, 1))
         if vectorized:
             Z = f(X)
@@ -215,18 +223,28 @@ def ezplot(f,xlim,ylim=None,ax = None,vectorized=True,N=None,contour = False,arg
         if N is None:
             N = 30
         T = np.zeros((N, 2))
-        L = xlim[1] - xlim[0]
-        T[:, 0] = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N) 
-        L = ylim[1] - ylim[0]
-        T[:, 1] = np.linspace(ylim[0] + L / N, ylim[1] - L / N, N) 
+        if include_endpoints:
+            T[:,0]=np.linspace(xlim[0],xlim[1],N)
+            T[:,1]=np.linspace(ylim[0],ylim[1],N)
+        else:
+            L = xlim[1] - xlim[0]
+            T[:, 0] = np.linspace(xlim[0] + L / N, xlim[1] - L / N, N) 
+            L = ylim[1] - ylim[0]
+            T[:, 1] = np.linspace(ylim[0] + L / N, ylim[1] - L / N, N) 
         X, Y = meshgrid(T[:, 0], T[:, 1])
         Z = grid_evaluation(X, Y, f,vectorized=vectorized)
         if contour:
             if not dry_run:
-                C = ax.contour(X,Y,Z,levels = np.array([0.001,1000]),colors=['red','blue'])
+                # C = ax.contour(X,Y,Z,levels = np.array([0.001,1000]),colors=['red','blue'])
+                N=200
+                colors=np.concatenate((np.ones((N,1)),np.tile(np.linspace(1,0,N).reshape(-1,1),(1,2))),axis=1)
+                colors = [ [1,1,1],*colors,[1,0,0]]
+                print('max',np.max(Z[:]))
+                C = ax.contourf(X,Y,Z,levels = [-np.inf,*np.linspace(-20,20,N),np.inf],colors=colors)
         else:
             if not dry_run:
-                C = ax.plot_surface(X, Y, Z)
+                C = ax.plot_surface(X, Y, Z)#cmap=cm.coolwarm, 
+                # C = ax.plot_wireframe(X, Y, Z, rcount=30,ccount=30)
     if show:
         plt.show()
     return ax,C,Z
