@@ -140,7 +140,10 @@ def integral(A=None,dF=None,F=None,axis = 0,trapez = False,cumulative = False):
         if trapez:
             midA = (A.take(indices = range(1,N),axis = axis)+A.take(indices = range(N-1),axis = axis))/2
         else:
-            midA = A.take(indices=range(N-1),axis=axis)
+            if axis:
+                midA = A.take(indices=range(N-1),axis=axis)
+            else:
+                midA = A[:-1]
         if dF is not None:
             dY = midA*dF
         else:
