@@ -2,8 +2,8 @@
 from setuptools import setup, find_packages
 
 setup(name='swutil',
-      version='1.4',
-      python_requires='>3.6',
+      version='1.4.1',
+      python_requires='>=3.6',
       description='Provide common code for validation, multiprocessing, logging, decorator, configuration, plotting, etc.',
       long_description=open('README.rst').read(),
       author='Soeren Wolfers',
