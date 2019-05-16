@@ -5,7 +5,7 @@ import numpy as np
 from numpy import all, array, uint8, log1p, exp
 
 from swutil.validation import NDim
-from swutil.aux import split_integer
+from swutil.misc import split_integer
 
 def is_1d(array):
     return np.squeeze(array).ndim == 1

@@ -13,7 +13,7 @@ import builtins
 import argparse
 import multiprocessing
 
-from swutil.aux import split_list, random_string, chain, cmd_exists
+from swutil.misc import split_list, random_string, chain, cmd_exists
 from swutil.validation import In, Bool, Function, validate_args, Passed, NotPassed,Function,String
 Pool = pathos.multiprocessing.ProcessingPool
 class Locker:

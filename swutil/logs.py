@@ -1,5 +1,5 @@
 import datetime
-from swutil.aux import no_context
+from swutil.misc import no_context
         
 class Log:   
     def __init__(self,print_filter=True,write_filter=False,file_name=None,lock=None):
