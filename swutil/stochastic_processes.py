@@ -7,7 +7,7 @@ from swutil.plots import plot_convergence
 from swutil.np_tools import integral, toeplitz_multiplication, MCSlicer
 from swutil.time import Timer
 
-def black_scholes(times,r,sigma,S0,d,M,dW=None):
+def black_scholes(times,r,sigma,S0,d,M,dW=None, random=np.random):
     '''
     Return M Euler-Maruyama sample paths with N time steps of S_t, where 
         dS_t = S_t*r*dt+S_t*sigma*dW_t
@@ -19,7 +19,7 @@ def black_scholes(times,r,sigma,S0,d,M,dW=None):
     times = times.flatten()
     p0 = np.log(S0)
     if dW is None:
-        dW=np.sqrt(times[1:]-times[:-1])[None,:,None]*np.random.normal(size=(M,N-1,d))
+        dW=np.sqrt(times[1:]-times[:-1])[None,:,None]*random.normal(size=(M,N-1,d))
     if np.squeeze(sigma).ndim<=1:
         dF = sigma*dW
         ito_correction = np.squeeze(sigma**2/2)
@@ -30,7 +30,7 @@ def black_scholes(times,r,sigma,S0,d,M,dW=None):
     diffusion = integral(dF=dF,axis=1,cumulative = True)
     return np.exp(p0 + drift + diffusion)
 
-def heston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
+def heston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True, random=np.random):
     '''
     Return M Euler-Maruyama sample paths with N time steps of (S_t,v_t), where
         (S_t,v_t) follows the Heston model of mathematical finance. 
@@ -54,14 +54,14 @@ def heston(times,mu,rho,kappa,theta,xi,S0,nu0,d,M,nu_1d=True):
         if np.array(rho).size ==1:
             rho = np.array([[1,rho],[rho,1]])
     chol = np.linalg.cholesky(rho)
-    dW = np.sqrt(dt)*np.einsum('ij,...j',chol,np.random.normal(size=(M,N-1,d+d_nu)))
+    dW = np.sqrt(dt)*np.einsum('ij,...j',chol,random.normal(size=(M,N-1,d+d_nu)))
     for i in range(1,N):
         nu[:,i,:] = np.abs(nu[:,i-1,:] + kappa*(theta-nu[:,i-1,:])*dt+xi*np.sqrt(nu[:,i-1,:])*dW[:,i-1,d:])
     S = S0*np.exp(integral(np.sqrt(nu),dF = dW[:,:,:d],axis=1,cumulative = True)+integral(mu - 0.5*nu,F = times,axis=1,trapez=False,cumulative = True))
     return np.concatenate((S,nu),axis=-1)
 
 
-def fBrown(H,T,N,M,dW = None,cholesky = False):
+def fBrown(H,T,N,M,dW = None,cholesky = False, random=np.random):
     '''
     Sample fractional Brownian motion with differentiability index H 
     on interval [0,T] (H=1/2 yields standard Brownian motion)
@@ -86,9 +86,9 @@ def fBrown(H,T,N,M,dW = None,cholesky = False):
         np.fill_diagonal(cov,times**(1-2*alpha)/(1-2*alpha))
         cov[np.tril_indices(N-1,-1)] = cov.T[np.tril_indices(N-1,-1)]
         L = scipy.linalg.cholesky(cov)
-        return np.concatenate((np.zeros((1,M)),L.T@np.random.normal(size=(N-1,M))))
+        return np.concatenate((np.zeros((1,M)),L.T@random.normal(size=(N-1,M))))
     if dW is None:
-        dW = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+        dW = np.sqrt(dt)*random.normal(size=(N-1,M))
     if H == 0.5:
         return integral(dF = dW,cumulative = True)  
     a = 1/dt/(1-alpha)*((T-times[N-2::-1])**(1-alpha)-(T-times[:0:-1])**(1-alpha))#a is array that is convolved with dW. Values arise from conditioning integral pieces on dW 
@@ -97,11 +97,11 @@ def fBrown(H,T,N,M,dW = None,cholesky = False):
     cov = np.array([[ dt**(1-2*alpha)/(1-2*alpha),dt**(1-alpha)/(1-alpha)],[dt**(1-alpha)/(1-alpha),dt]])
     var = cov[0,0]-cov[0,1]**2/cov[1,1]
     out += cov[0,1]/cov[1,1]*dW #Conditional mean
-    out += np.sqrt(var)*np.random.normal(size = (N-1,M))#Conditional variance
+    out += np.sqrt(var)*random.normal(size = (N-1,M))#Conditional variance
     out = np.concatenate((np.zeros((1,M)),out))
     return out
 
-def r_bergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
+def r_bergomi(H, T, eta, xi, rho, S0, r, N, M, dW=None, dW_orth=None, cholesky=False, return_v=False, random=np.random):
     '''
     Return M Euler-Maruyama sample paths with N time steps of (S_t,v_t), where
         (S_t,v_t) follows the rBergomi model of mathematical finance
@@ -112,9 +112,9 @@ def r_bergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,retu
     dt = T/(N-1)
     times = np.reshape(times,(-1,1))
     if dW is None:
-        dW = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+        dW = np.sqrt(dt)*random.normal(size=(N-1,M))
     if dW_orth is None:
-        dW_orth = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+        dW_orth = np.sqrt(dt)*random.normal(size=(N-1,M))
     dZ = rho*dW+np.sqrt(1-rho**2)*dW_orth
     Y = eta*np.sqrt(2*H)*fBrown(H,T,N,M,dW =dW,cholesky = cholesky)
     v = xi*np.exp(Y-0.5*(eta**2)*times**(2*H))
@@ -124,14 +124,14 @@ def r_bergomi(H,T,eta,xi,rho,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,retu
     else:
         return np.array([S]).T
     
-def rThreeHalves(H,T,eta,xi,rho,alpha,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False):
+def rThreeHalves(H,T,eta,xi,rho,alpha,S0,r,N,M,dW=None,dW_orth=None,cholesky = False,return_v=False, random=np.random):
     times = np.linspace(0, T, N)
     dt = T/(N-1)
     times = np.reshape(times,(-1,1))
     if dW is None:
-        dW = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+        dW = np.sqrt(dt)*random.normal(size=(N-1,M))
     if dW_orth is None:
-        dW_orth = np.sqrt(dt)*np.random.normal(size=(N-1,M))
+        dW_orth = np.sqrt(dt)*random.normal(size=(N-1,M))
     dZ = rho*dW+np.sqrt(1-rho**2)*dW_orth
     Y = eta*np.sqrt(2*H)*fBrown(H,T,N,M,dW =dW,cholesky = cholesky)
     v = _v_rThreeHalves_direct(Y,times,alpha,xi,xi,eta,H)
