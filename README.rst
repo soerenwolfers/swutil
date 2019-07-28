@@ -6,9 +6,6 @@ swutil
 This package provides common tools for validation, multiprocessing, logging, plotting, configuration, etc., 
 that are frequently used by the author in other projects.
 
----
+**Installation:**
 
-To install run :code:`pip install swutil`
-
----
-
+Run :code:`pip install swutil` in your terminal
