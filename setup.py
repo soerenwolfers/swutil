@@ -10,5 +10,10 @@ setup(name='swutil',
       author_email='soeren.wolfers@gmail.com',
       url = 'https://github.com/soerenwolfers/swutil',
       packages=find_packages(exclude=['*tests']),#,'examples*']),
-      install_requires=['numpy','matplotlib','matplotlib2tikz','memory_profiler','pathos','dill','PyPDF2','readline']
+      install_requires=['numpy','matplotlib','matplotlib2tikz','memory_profiler','pathos','dill','PyPDF2']
 )
+try:
+    from pip._internal import main as pipmain
+    pipmain(['install', 'readline'])
+except:
+    warnings.warn('Could not install readline')

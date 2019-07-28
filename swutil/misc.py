@@ -5,7 +5,6 @@ import shutil
 import re
 import keyword
 import ast
-import readline
 from datetime import timedelta
 
 import numpy as np
@@ -220,6 +219,7 @@ def input_with_prefill(prompt, text):
         readline.insert_text(text)
         readline.redisplay()
     try:
+        import readline
         readline.set_pre_input_hook(hook)
     except Exception:
         pass
