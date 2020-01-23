@@ -22,5 +22,5 @@ setup(name='swutil',
       url = 'https://github.com/soerenwolfers/swutil',
       packages=find_packages(exclude=['*tests']),#,'examples*']),
       cmdclass={ 'install': PostInstallCommand, },
-      install_requires=['numpy','matplotlib','matplotlib2tikz','memory_profiler','pathos','dill','PyPDF2']
+      install_requires=['numpy','matplotlib','tikzplotlib','memory_profiler','pathos','dill','PyPDF2']
 )

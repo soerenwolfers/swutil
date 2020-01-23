@@ -14,7 +14,7 @@ from matplotlib.colors import LightSource
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib
 from matplotlib.pyplot import savefig
-import matplotlib2tikz
+import tikzplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # @UnresolvedImport. Axes3D is needed for projection = '3d' below @UnusedImport
 
@@ -36,7 +36,7 @@ def save(*name, pdf=True, tex=False, png = False, figs = None):
     if tex:
         if figs is not None:
             raise ValueError('tex only supports saving current figure')
-        matplotlib2tikz.save(name + '.tex')
+        tikzplotlib.save(name + '.tex')
     if pdf or png:
         def save(format):
             nonlocal figs
